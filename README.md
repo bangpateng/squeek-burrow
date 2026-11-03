@@ -75,3 +75,5 @@ src/components/  Hero, Burrow, Tools, Footer, Sprite
 - **Hamster forecast**: guess whether the hamster will be running or napping in 5 minutes. A correct guess pays seeds, double if you called a change, plus a streak bonus up to 5. It is judged on the first live reading after the time is up. If you were away for more than 90 seconds past that, the forecast is cancelled with no win or loss.
 - Both quests are paused on the demo wheel or when the API cannot be reached. Quest progress is stored in localStorage (`squeek-burrow-quests-v1`).
 - The size of a work unit (how long a goal takes) is not documented by the API. If goals feel too fast or slow, change `GOAL_UNITS` in `src/core/quests.ts`.
+
+squeekchain-project: 44d50f22-208e-4244-996f-d70152686fd5
