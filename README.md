@@ -1,79 +1,39 @@
-# Squeek Burrow
+# Squeek Burrow: hamster kart adventure
 
-An idle game for Squeekchain. You dig a burrow, collect seeds, and unlock chambers. The twist is the real hamster: while it runs on the wheel, every chamber works at triple speed. When it naps, production drops to a tenth.
+A 3D hamster kart racing game for Squeekchain, built with React, Three.js and Vite. All models, textures, music and sound effects are generated in code, so there are no asset files.
 
-Unofficial fan project, not affiliated with Squeekchain. All hamster art here is original pixel art made for this project.
+**Unofficial. Not affiliated with Squeekchain.** Built by [@naxweb3](https://x.com/naxweb3).
+
+## How it uses Squeekchain
+
+The game polls the public `GET /v1/status` endpoint of the Squeekchain hamster wheel every 3 seconds (`src/core/feed.ts`) and reads `measurement.freshness`, `rpmMilli`, `speedMmPerSecond` and `distanceMm`.
+
+- While the real hamster is running, your turbo tank fills **twice as fast** and every event pays **25% more seeds**.
+- When the hamster crosses a 50 m distance mark or beats its speed record, **Squeek fever** fills your turbo tank instantly mid-race.
+- The live state is shown on the title screen, the map and in the race HUD.
+
+Set `VITE_SQUEEK_API_URL=https://api.squeekchain.com` at build time. Without it the game uses a clearly labelled demo wheel.
+
+## The game
+
+- **Adventure map**: three regions (Sunflower Meadow, Kitchen Counter, The Deep Burrow), each with a Grand Prix against 5 AI rivals, a time trial and a 90-second seed rush. Stars open the next region (4 and 10 stars).
+- **4 hamsters** with different speed, acceleration and handling. Unlock them with seeds.
+- **Garage upgrades**: engine, tyres and turbo tank, 4 levels each.
+- **Item boxes and weapons** (Grand Prix only): acorn shot that bounces off walls, homing cheese, pepper trap, seed bomb with an explosion radius, bubble shield and cheek rocket. Racers at the back get stronger items, and the AI rivals use items against you and each other. Hits spin you out; shields block one hit.
+- **Effects**: explosions with fire, smoke and a shock ring, wall and kart-to-kart sparks, camera shake, red hit flash, speed lines on big boosts, drift smoke.
+- **Sound**: all synthesised. A different song per track with drums, bass, arpeggio and lead (it speeds up on the final lap), a geared engine, tyre squeal, wind, offroad rumble, nearby rival engines, track ambience (birds, kitchen hum, cave drips) and sounds for every item, hit and explosion.
+- **Driving**: drift through corners for blue and orange mini-turbos, boost pads, 3-bar turbo, seed pickups, minimap, positions, lap times.
+- **Menus**: Play / Continue / New game, pause with resume and restart, results with stars, settings for music, effects, engine sound, volume and graphics quality. Progress saves in localStorage.
+- **Controls**: keyboard (WASD or arrows, Space to drift, E to turbo, Q or F to use an item, hold S with Q to throw it back, Esc to pause), gamepads, and on-screen touch buttons on phones with optional auto-accelerate.
 
 ## Run it
 
-```bash
+```
 npm install
 npm test
 npm run dev
 ```
 
-Open `/?demo` to force the demo wheel (a hamster that runs and naps on a loop).
-
-## Live hamster data
-
-The game reads `GET {VITE_SQUEEK_API_URL}/v1/status` every 3 seconds.
-
-```bash
-cp .env.example .env     # set VITE_SQUEEK_API_URL=https://api.squeekchain.com
-```
-
-- Running means `freshness` is `online` and speed or rpm is above zero. The real rpm (`rpmMilli`) sets how fast the wheel spins.
-- Wheel power: x3 while running, x0.1 while napping.
-- Squeek fever (x2 for 60 seconds, stacks with wheel power): the hamster crosses a 50 m mark of total distance, or beats the fastest speed seen during your visit.
-- If the API can't be reached, the page says so and the wheel counts as napping.
-
-The browser calls the API directly, so the API must allow cross-origin requests from your host. If it doesn't, add a `vercel.json` rewrite and set `VITE_SQUEEK_API_URL` to `/api`:
-
-```json
-{ "rewrites": [{ "source": "/api/:path*", "destination": "https://api.squeekchain.com/:path*" }] }
-```
-
-## How it plays
-
-- Forage (button or space) gives seeds by hand. Cheek pouches make each forage bigger.
-- Five chambers, each unlocked by buying the one before it. Costs grow 15% per purchase.
-- Away time earns at base speed, up to 8 hours. The wheel bonus only applies while you watch.
-- Hibernate after 50,000 seeds in one run: start over and keep +10% production per dream seed.
-- Download a share card (PNG) of your progress.
-- Progress is saved in your browser (localStorage). There is no wallet and no server.
-
-## Structure
-
-```
-src/core/
-  economy.ts     costs, production, offline gain, hibernate, save validation
-  feed.ts        live and demo wheel feeds, fever detection
-  sprites.ts     original pixel hamster maps
-  shareCard.ts   canvas share image
-src/hooks/       useGame (loop and saving), useWheel (feed and fever)
-src/components/  Hero, Burrow, Tools, Footer, Sprite
-```
-
-## Ideas for later
-
-- Use the `/v1/events` feed for fever triggers (needs the real event payload).
-- Shared leaderboard (needs a small backend).
-- Optional wallet sign-in to name leaderboard entries.
-
-## Sound, achievements and extras
-
-- **Sound**: everything is synthesized with the Web Audio API, so there are no audio files. Use the Sound button in the header to toggle Effects, Wheel ticks (a soft tick that follows the real wheel rpm) and Music (a small chiptune loop, off by default), and to set the volume. Settings are saved in localStorage. Browsers only allow audio after a first click or key press.
-- **Achievements**: 13 of them, each adds +1% to all production.
-- **Golden seed**: now and then a golden seed floats across the sky. Catch it for about 45 seconds of production. Add `?golden` to the URL to make one appear after 1.5 seconds when testing.
-- **Buy amount**: buy chambers x1, x10 or Max.
-- **Sleep and fever visuals**: the sky darkens with floating "z z z" when the hamster naps, and the wheel glows gold during Squeek fever.
-- **Post on X**: share your seed count from the Tools section.
-
-## Wheel quests (live data only)
-
-- **Community goal**: every 250 units of the wheel's `cumulativeWorkUnits` counter is one goal. The counter comes from the same API for everyone, so all players watch the same progress with no server. If you are on the page when a goal is passed you get seeds. The first visit only sets a baseline, so old goals never pay out.
-- **Hamster forecast**: guess whether the hamster will be running or napping in 5 minutes. A correct guess pays seeds, double if you called a change, plus a streak bonus up to 5. It is judged on the first live reading after the time is up. If you were away for more than 90 seconds past that, the forecast is cancelled with no win or loss.
-- Both quests are paused on the demo wheel or when the API cannot be reached. Quest progress is stored in localStorage (`squeek-burrow-quests-v1`).
-- The size of a work unit (how long a goal takes) is not documented by the API. If goals feel too fast or slow, change `GOAL_UNITS` in `src/core/quests.ts`.
+Test helpers: add `?autopilot` to let the AI drive your kart and `?timescale=3` to speed up time.
 
 squeekchain-project: 44d50f22-208e-4244-996f-d70152686fd5
