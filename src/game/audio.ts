@@ -426,7 +426,7 @@ function loopsOff() {
 let ambTimer: number | null = null;
 let ambHum: { src: AudioScheduledSourceNode; g: GainNode } | null = null;
 
-export function ambience(kind: "meadow" | "kitchen" | "burrow" | null) {
+export function ambience(kind: "meadow" | "kitchen" | "burrow" | "wheel" | null) {
   if (ambTimer !== null) clearInterval(ambTimer);
   ambTimer = null;
   if (ambHum && ctx) {
@@ -438,15 +438,15 @@ export function ambience(kind: "meadow" | "kitchen" | "burrow" | null) {
   if (!kind || !ctx || !ambBus) return;
   const c = ctx;
   if (kind !== "meadow") {
-    // kitchen fridge hum or deep burrow wind
+    // kitchen fridge hum, deep burrow wind or the stadium crowd
     const src = c.createBufferSource();
     src.buffer = noiseBuf;
     src.loop = true;
     const f = c.createBiquadFilter();
-    f.type = "lowpass";
-    f.frequency.value = kind === "kitchen" ? 120 : 260;
+    f.type = kind === "wheel" ? "bandpass" : "lowpass";
+    f.frequency.value = kind === "kitchen" ? 120 : kind === "wheel" ? 700 : 260;
     const g = c.createGain();
-    g.gain.value = kind === "kitchen" ? 0.12 : 0.16;
+    g.gain.value = kind === "kitchen" ? 0.12 : kind === "wheel" ? 0.07 : 0.16;
     src.connect(f);
     f.connect(g);
     g.connect(ambBus);
@@ -460,6 +460,8 @@ export function ambience(kind: "meadow" | "kitchen" | "burrow" | null) {
       const f = 2200 + Math.random() * 1600;
       const n = 2 + Math.floor(Math.random() * 4);
       for (let i = 0; i < n; i++) tone(f * (1 + (Math.random() - 0.5) * 0.2), 0.07, "sine", 0.025, i * 0.09, f * 1.3, ambBus);
+    } else if (kind === "wheel") {
+      if (Math.random() < 0.3) noise(1.4, 0.06, 1200, 0, "bandpass", 1800, ambBus); // a cheer
     } else if (kind === "kitchen") {
       tone(2600 + Math.random() * 1200, 0.25, "sine", 0.015, 0, undefined, ambBus); // clink
     } else {
@@ -488,6 +490,7 @@ const SONGS: Record<string, Song> = {
   menu: { bpm: 96, root: 60, chords: [[0, 4, 7, 11], [-3, 0, 4, 7], [5, 9, 12, 16], [7, 11, 14, 17]], kick: "x.......x.......", snare: "....x.......x...", hat: "..x...x...x...x.", bass: "0...0.2.0...1.2.", lead: "2...1...0.......", arp: true, wave: "triangle" },
   meadow: { bpm: 142, root: 62, chords: [[0, 4, 7], [5, 9, 12], [-3, 0, 4], [7, 11, 14]], kick: "x...x...x...x...", snare: "....x.......x..x", hat: "x.x.x.x.x.x.x.xx", bass: "0.0o0.0o1.1o2.2o", lead: "2.1.0...2.3.2...", arp: true, wave: "square" },
   kitchen: { bpm: 128, root: 57, chords: [[0, 3, 7, 10], [5, 8, 12, 15], [3, 7, 10, 14], [-2, 2, 5, 9]], kick: "x..x..x...x..x..", snare: "....x.......x...", hat: "x.xxx.xxx.xxx.xx", bass: "0..0o.0.0..1o.2.", lead: "3...2.1...0.1.2.", arp: false, wave: "sawtooth" },
+  wheel: { bpm: 150, root: 60, chords: [[0, 4, 7], [7, 11, 14], [9, 12, 16], [5, 9, 12]], kick: "x...x...x...x...", snare: "....x.......x.x.", hat: "xxx.xxx.xxx.xxxx", bass: "0.0o0.0o0.0o1.2.", lead: "2.3.4.3.2...1.0.", arp: true, wave: "square" },
   burrow: { bpm: 134, root: 50, chords: [[0, 3, 7], [-4, 0, 3], [-7, -3, 0], [-5, -1, 2]], kick: "x.....x.x.......", snare: "....x.......x.x.", hat: "..x...x...x...x.", bass: "0.0.0o0.0.0.1.2.", lead: "0.2.1...3...2.1.", arp: true, wave: "triangle" },
 };
 
@@ -560,7 +563,7 @@ function stopMusic() {
   }
 }
 
-export function music(name: "menu" | "meadow" | "kitchen" | "burrow" | "off") {
+export function music(name: "menu" | "meadow" | "kitchen" | "burrow" | "wheel" | "off") {
   if (name === "off") {
     song = null;
     stopMusic();

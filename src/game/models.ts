@@ -1,5 +1,6 @@
 // Low-poly models built from primitives. No external model files.
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import type { Character } from "./data";
 
 const mats = new Map<string, THREE.MeshStandardMaterial>();
@@ -29,47 +30,87 @@ function mesh(geo: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0,
 
 const sphere = (r: number, w = 10, h = 8) => new THREE.SphereGeometry(r, w, h);
 
-// A chubby hamster facing +z, sitting with its base at y = 0.
+// Smooth, glossy material for characters and karts (the scenery keeps the flat low-poly look).
+const smooth = new Map<string, THREE.MeshStandardMaterial>();
+export function soft(color: number, opts: { rough?: number; metal?: number; emissive?: number; opacity?: number } = {}): THREE.MeshStandardMaterial {
+  const key = `${color}-${opts.rough ?? 0.6}-${opts.metal ?? 0}-${opts.emissive ?? 0}-${opts.opacity ?? 1}`;
+  let m = smooth.get(key);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({
+      color,
+      roughness: opts.rough ?? 0.6,
+      metalness: opts.metal ?? 0,
+      emissive: opts.emissive ?? 0x000000,
+      emissiveIntensity: opts.emissive ? 1 : 0,
+      transparent: (opts.opacity ?? 1) < 1,
+      opacity: opts.opacity ?? 1,
+    });
+    smooth.set(key, m);
+  }
+  return m;
+}
+
+const ball = (r: number) => new THREE.SphereGeometry(r, 24, 18);
+
+// A round, fluffy hamster facing +z, sitting with its base at y = 0.
 export function buildHamster(c: Pick<Character, "fur" | "belly" | "kart">): THREE.Group {
   const g = new THREE.Group();
-  const fur = mat(c.fur);
-  const belly = mat(c.belly);
-  const pink = mat(0xf59ab0);
-  const black = mat(0x1a1214, { rough: 0.3 });
+  const fur = soft(c.fur, { rough: 0.85 });
+  const cream = soft(c.belly, { rough: 0.9 });
+  const pink = soft(0xf7a3b5, { rough: 0.5 });
+  const eyeMat = soft(0x120c0e, { rough: 0.15, metal: 0.2 });
+  const white = soft(0xffffff, { rough: 0.2 });
+  const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, sx = 1, sy = sx, sz = sx, shadow = true) => {
+    const o = new THREE.Mesh(geo, m);
+    o.position.set(x, y, z);
+    o.scale.set(sx, sy, sz);
+    o.castShadow = shadow;
+    g.add(o);
+    return o;
+  };
 
-  const body = mesh(sphere(0.55), fur, 0, 0.5, 0);
-  body.scale.set(1, 0.92, 1.05);
-  g.add(body);
-  const tummy = mesh(sphere(0.4), belly, 0, 0.45, 0.22);
-  tummy.scale.set(1, 1, 0.8);
-  g.add(tummy);
-  const head = mesh(sphere(0.43), fur, 0, 1.02, 0.12);
-  g.add(head);
-  const face = mesh(sphere(0.3), belly, 0, 0.94, 0.33);
-  face.scale.set(1.1, 0.8, 0.7);
-  g.add(face);
+  // one soft pear-shaped body: hamsters barely have a neck
+  add(ball(0.6), fur, 0, 0.62, -0.02, 1, 1.05, 1.02);
+  add(ball(0.5), fur, 0, 1.12, 0.08, 1.02, 0.92, 0.95);
+  add(ball(0.46), cream, 0, 0.55, 0.24, 0.98, 1.05, 0.72);
+  // face: cream muzzle and puffed cheek pouches
+  add(ball(0.3), cream, 0, 1.0, 0.36, 1.25, 0.82, 0.8);
   for (const s of [-1, 1]) {
-    const cheek = mesh(sphere(0.2, 8, 6), fur, s * 0.3, 0.92, 0.24);
-    g.add(cheek);
-    const ear = mesh(sphere(0.15, 8, 6), fur, s * 0.27, 1.38, 0.02);
-    ear.scale.set(1, 1, 0.45);
-    g.add(ear);
-    const inner = mesh(sphere(0.09, 8, 6), pink, s * 0.27, 1.38, 0.07, false);
-    inner.scale.set(1, 1, 0.4);
-    g.add(inner);
-    const eye = mesh(sphere(0.065, 8, 6), black, s * 0.16, 1.1, 0.48, false);
-    g.add(eye);
-    const shine = mesh(sphere(0.022, 6, 4), mat(0xffffff), s * 0.16 + 0.02, 1.13, 0.535, false);
-    g.add(shine);
-    const paw = mesh(sphere(0.1, 8, 6), pink, s * 0.2, 0.78, 0.55);
-    g.add(paw);
+    add(ball(0.24), fur, s * 0.34, 1.0, 0.24, 1, 0.95, 1);
+    add(ball(0.2), cream, s * 0.3, 0.94, 0.33, 1, 0.9, 0.8, false);
+    // ears
+    add(ball(0.17), fur, s * 0.3, 1.5, -0.02, 1, 1.05, 0.5);
+    add(ball(0.11), pink, s * 0.3, 1.5, 0.03, 1, 1, 0.35, false);
+    // big glossy eyes with two highlights
+    add(ball(0.085), eyeMat, s * 0.17, 1.16, 0.47, 1, 1.15, 0.8, false);
+    add(ball(0.03), white, s * 0.17 + 0.03, 1.2, 0.53, 1, 1, 1, false);
+    add(ball(0.014), white, s * 0.17 - 0.02, 1.13, 0.535, 1, 1, 1, false);
+    // blush
+    add(new THREE.CircleGeometry(0.07, 16), soft(0xff8fa8, { opacity: 0.55, rough: 1 }), s * 0.27, 1.04, 0.48, 1, 0.7, 1, false).rotation.y = s * 0.45;
+    // whiskers
+    for (const k of [-1, 0, 1]) {
+      const wsk = add(new THREE.CylinderGeometry(0.006, 0.006, 0.32, 4), soft(0x3a2a24), s * 0.32, 0.98 + k * 0.035, 0.42, 1, 1, 1, false);
+      wsk.rotation.z = Math.PI / 2 + k * 0.15 * s;
+      wsk.rotation.y = s * -0.35;
+    }
+    // front paws on the wheel and little feet
+    add(ball(0.09), pink, s * 0.2, 0.86, 0.6, 1.1, 0.9, 1);
+    add(ball(0.11), pink, s * 0.24, 0.12, 0.42, 1.2, 0.6, 1.4);
   }
-  const nose = mesh(sphere(0.05, 6, 4), pink, 0, 0.98, 0.57, false);
-  g.add(nose);
-  // racing scarf in the kart colour
-  const scarf = mesh(new THREE.TorusGeometry(0.36, 0.08, 6, 14), mat(c.kart), 0, 0.78, 0.08);
-  scarf.rotation.x = Math.PI / 2;
-  g.add(scarf);
+  add(ball(0.055), pink, 0, 1.05, 0.6, 1.2, 0.9, 1, false);
+  // buck teeth
+  for (const s of [-1, 1]) add(new THREE.BoxGeometry(0.035, 0.06, 0.02), white, s * 0.02, 0.9, 0.58, 1, 1, 1, false);
+  // racing goggles pushed up on the forehead in the kart colour
+  const band = add(new THREE.TorusGeometry(0.47, 0.035, 8, 32), soft(c.kart, { rough: 0.4 }), 0, 1.3, 0.04, 1, 1, 1, false);
+  band.rotation.x = Math.PI / 2 - 0.25;
+  for (const s of [-1, 1]) {
+    const rim = add(new THREE.TorusGeometry(0.085, 0.025, 8, 20), soft(0x2a2a30, { metal: 0.6, rough: 0.3 }), s * 0.14, 1.4, 0.47, 1, 1, 1, false);
+    rim.rotation.x = -0.55;
+    const lens = add(new THREE.CircleGeometry(0.08, 20), soft(0x8fdcff, { metal: 0.4, rough: 0.05, emissive: 0x1a3a50 }), s * 0.14, 1.4, 0.48, 1, 1, 1, false);
+    lens.rotation.x = -0.55;
+  }
+  // tail
+  add(ball(0.08), fur, 0, 0.3, -0.6);
   return g;
 }
 
@@ -86,65 +127,85 @@ export function buildKart(c: Pick<Character, "fur" | "belly" | "kart">, scale = 
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
-  const paint = mat(c.kart, { rough: 0.45, metal: 0.1 });
-  const dark = mat(0x2a1a1e);
-  const metal = mat(0xb9b6c2, { rough: 0.35, metal: 0.6 });
+  const paint = soft(c.kart, { rough: 0.3, metal: 0.25 });
+  const trim = soft(0x1c1418, { rough: 0.5 });
+  const chrome = soft(0xd8d6e0, { rough: 0.15, metal: 0.95 });
+  const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = body) => {
+    const o = new THREE.Mesh(geo, m);
+    o.position.set(x, y, z);
+    o.castShadow = true;
+    parent.add(o);
+    return o;
+  };
 
-  const chassis = mesh(new THREE.BoxGeometry(1.5, 0.32, 2.5), paint, 0, 0.42, 0);
-  body.add(chassis);
-  const nose = mesh(new THREE.BoxGeometry(1.1, 0.26, 0.7), paint, 0, 0.45, 1.45);
-  body.add(nose);
-  const bumper = mesh(new THREE.BoxGeometry(1.7, 0.16, 0.22), dark, 0, 0.32, 1.85);
-  body.add(bumper);
-  const sideL = mesh(new THREE.BoxGeometry(0.3, 0.3, 1.6), paint, -0.9, 0.4, -0.1);
-  const sideR = sideL.clone();
-  sideR.position.x = 0.9;
-  body.add(sideL, sideR);
-  const seat = mesh(new THREE.BoxGeometry(0.95, 0.75, 0.25), dark, 0, 0.85, -0.85);
-  body.add(seat);
-  const wheelRing = mesh(new THREE.TorusGeometry(0.22, 0.05, 6, 12), dark, 0, 1.0, 0.6);
-  wheelRing.rotation.x = -0.9;
-  body.add(wheelRing);
-  const column = mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), dark, 0, 0.8, 0.75);
-  column.rotation.x = 0.7;
-  body.add(column);
-  // spoiler
-  const wing = mesh(new THREE.BoxGeometry(1.6, 0.08, 0.45), paint, 0, 1.12, -1.3);
-  body.add(wing);
+  add(new RoundedBoxGeometry(1.5, 0.34, 2.6, 4, 0.14), paint, 0, 0.44, -0.05);
+  // tapered nose with a front wing
+  const nose = add(new RoundedBoxGeometry(0.9, 0.28, 0.95, 4, 0.12), paint, 0, 0.46, 1.5);
+  nose.rotation.x = 0.08;
+  add(new RoundedBoxGeometry(1.9, 0.08, 0.38, 2, 0.03), trim, 0, 0.3, 1.95);
+  for (const s of [-1, 1]) add(new RoundedBoxGeometry(0.08, 0.26, 0.42, 2, 0.03), paint, s * 0.95, 0.38, 1.95);
+  // side pods with a white racing stripe
   for (const s of [-1, 1]) {
-    body.add(mesh(new THREE.BoxGeometry(0.08, 0.5, 0.2), dark, s * 0.55, 0.85, -1.3));
-    const pipe = mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.5, 8), metal, s * 0.35, 0.45, -1.45);
-    pipe.rotation.x = Math.PI / 2;
-    body.add(pipe);
+    add(new RoundedBoxGeometry(0.38, 0.32, 1.5, 4, 0.12), paint, s * 0.88, 0.42, -0.15);
+    add(new THREE.BoxGeometry(0.02, 0.07, 1.3), soft(0xffffff, { rough: 0.4 }), s * 1.075, 0.47, -0.15);
+    // headlights
+    add(new THREE.CircleGeometry(0.08, 16), soft(0xfff6d0, { emissive: 0xfff2b0 }), s * 0.32, 0.5, 1.98).rotation.y = 0;
   }
-  // flames shown while boosting
+  // seat and steering wheel
+  add(new RoundedBoxGeometry(0.95, 0.8, 0.28, 4, 0.1), trim, 0, 0.86, -0.88);
+  const ring = add(new THREE.TorusGeometry(0.22, 0.045, 10, 24), trim, 0, 1.02, 0.62);
+  ring.rotation.x = -0.9;
+  const column = add(new THREE.CylinderGeometry(0.035, 0.035, 0.5, 8), chrome, 0, 0.82, 0.76);
+  column.rotation.x = 0.7;
+  // rear wing on two struts
+  add(new RoundedBoxGeometry(1.7, 0.08, 0.5, 2, 0.03), paint, 0, 1.15, -1.32);
+  for (const s of [-1, 1]) {
+    add(new RoundedBoxGeometry(0.06, 0.5, 0.42, 2, 0.02), trim, s * 0.86, 1.05, -1.32);
+    add(new THREE.BoxGeometry(0.07, 0.42, 0.12), trim, s * 0.5, 0.88, -1.32);
+    const pipe = add(new THREE.CylinderGeometry(0.08, 0.1, 0.55, 12), chrome, s * 0.36, 0.45, -1.48);
+    pipe.rotation.x = Math.PI / 2;
+  }
+  // number roundel on the nose
+  const num = add(new THREE.CircleGeometry(0.16, 20), soft(0xffffff, { rough: 0.4 }), 0, 0.61, 1.45);
+  num.rotation.x = -Math.PI / 2 + 0.08;
+
   const flames: THREE.Mesh[] = [];
   for (const s of [-1, 1]) {
-    const f = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.9, 7), new THREE.MeshBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.9 }));
+    const f = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.9, 10), new THREE.MeshBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.9 }));
     f.rotation.x = -Math.PI / 2;
-    f.position.set(s * 0.35, 0.45, -2.05);
+    f.position.set(s * 0.36, 0.45, -2.1);
     f.visible = false;
     body.add(f);
     flames.push(f);
   }
 
   const driver = buildHamster(c);
-  driver.position.set(0, 0.42, -0.35);
-  driver.scale.setScalar(0.95);
+  driver.position.set(0, 0.42, -0.4);
+  driver.scale.setScalar(0.92);
   body.add(driver);
 
   const wheels: THREE.Mesh[] = [];
   const front: THREE.Group[] = [];
-  const tyre = mat(0x222026, { rough: 0.9 });
-  const hub = mat(0xf2f0e8, { rough: 0.5 });
-  for (const [x, z, f] of [[-0.95, 0.95, true], [0.95, 0.95, true], [-0.95, -0.9, false], [0.95, -0.9, false]] as [number, number, boolean][]) {
+  const tyre = soft(0x26222a, { rough: 0.95 });
+  const rimMat = soft(c.kart, { rough: 0.25, metal: 0.4 });
+  for (const [x, z, f] of [[-0.98, 0.98, true], [0.98, 0.98, true], [-0.98, -0.92, false], [0.98, -0.92, false]] as [number, number, boolean][]) {
     const holder = new THREE.Group();
     holder.position.set(x, 0.38, z);
     const r = f ? 0.36 : 0.42;
-    const w = mesh(new THREE.CylinderGeometry(r, r, f ? 0.32 : 0.4, 12), tyre);
+    const wdt = f ? 0.32 : 0.42;
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(r, r, wdt, 24), tyre);
     w.rotation.z = Math.PI / 2;
-    const h = mesh(new THREE.CylinderGeometry(r * 0.45, r * 0.45, (f ? 0.32 : 0.4) + 0.02, 8), hub, 0, 0, 0, false);
-    w.add(h);
+    w.castShadow = true;
+    for (const side of [-1, 1]) {
+      const tread = new THREE.Mesh(new THREE.TorusGeometry(r - 0.02, 0.05, 6, 24), tyre);
+      tread.rotation.x = Math.PI / 2;
+      tread.position.y = side * (wdt / 2 - 0.04);
+      w.add(tread);
+    }
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.55, r * 0.55, wdt + 0.02, 12), rimMat);
+    w.add(hub);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.2, r * 0.2, wdt + 0.05, 10), chrome);
+    w.add(cap);
     w.position.y = r - 0.38;
     holder.add(w);
     root.add(holder);

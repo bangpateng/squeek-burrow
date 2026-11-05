@@ -1,8 +1,8 @@
 // Static game content: hamsters, regions, events and garage upgrades.
 
 export type CharId = "squeek" | "nibbles" | "biscuit" | "mochi";
-export type TrackId = "meadow" | "kitchen" | "burrow";
-export type EventKind = "race" | "trial" | "rush";
+export type TrackId = "meadow" | "kitchen" | "burrow" | "wheel";
+export type EventKind = "race" | "trial" | "rush" | "ghost" | "round";
 export type UpgradeId = "engine" | "tires" | "turbo";
 
 export interface Character {
@@ -81,6 +81,20 @@ export const TRACKS: Record<TrackId, TrackDef> = {
       wall: 0xd96b4a, sun: 0xfff6e8, sunIntensity: 2.2, hemiSky: 0xfff1dc, hemiGround: 0x8a5a3a, night: false,
     },
   },
+  wheel: {
+    id: "wheel",
+    name: "The Big Wheel",
+    region: "Squeek's Wheel",
+    blurb: "A stadium built around a giant wheel that spins with the real hamster.",
+    width: 8.5,
+    points: [
+      [0, -82], [60, -78], [98, -42], [104, 8], [84, 52], [36, 68], [8, 96], [-38, 80], [-88, 66], [-108, 14], [-94, -44], [-52, -76],
+    ],
+    theme: {
+      sky: 0x3a2a5a, fog: 0x6a4a7a, fogNear: 120, fogFar: 460, ground: 0x4f8a4a, road: 0x3c3640, kerbA: 0xffc83d, kerbB: 0x2a1a1e,
+      wall: 0x8a6bff, sun: 0xffb38a, sunIntensity: 1.6, hemiSky: 0xd9a8ff, hemiGround: 0x3a2a3a, night: false,
+    },
+  },
   burrow: {
     id: "burrow",
     name: "Moonlit Burrow",
@@ -100,7 +114,9 @@ export const TRACKS: Record<TrackId, TrackDef> = {
 // Track outlines above are drawn small; every track is scaled up by this much.
 export const TRACK_SCALE = 1.45;
 
-export const TRACK_ORDER: TrackId[] = ["meadow", "kitchen", "burrow"];
+export const TRACK_ORDER: TrackId[] = ["wheel", "meadow", "kitchen", "burrow"];
+// Tracks used by the adventure regions (the wheel arena is the live Squeekchain stage).
+export const RACE_TRACKS: TrackId[] = ["meadow", "kitchen", "burrow", "wheel"];
 
 export interface EventDef {
   id: string;
@@ -116,6 +132,8 @@ export interface EventDef {
 }
 
 export const EVENTS: EventDef[] = [
+  { id: "wheel-ghost", track: "wheel", kind: "ghost", name: "Race the Hamster", laps: 2, rivals: 0, difficulty: 0, stars: [1, 2, 3], reward: 300 },
+  { id: "wheel-round", track: "wheel", kind: "round", name: "Round Cup", laps: 3, rivals: 5, difficulty: 0.7, stars: [3, 2, 1], reward: 320 },
   { id: "meadow-race", track: "meadow", kind: "race", name: "Meadow Grand Prix", laps: 3, rivals: 5, difficulty: 0.55, stars: [3, 2, 1], reward: 220 },
   { id: "meadow-trial", track: "meadow", kind: "trial", name: "Sunflower Time Trial", laps: 3, rivals: 0, difficulty: 0, stars: [115, 100, 90], reward: 160 },
   { id: "meadow-rush", track: "meadow", kind: "rush", name: "Seed Rush", laps: 0, rivals: 0, difficulty: 0, stars: [25, 40, 55], reward: 160 },
@@ -129,8 +147,19 @@ export const EVENTS: EventDef[] = [
 
 export const RUSH_SECONDS = 90;
 
+// The Round Cup moves to a different track with every settled Squeekchain round.
+export function roundTrack(round: number): TrackId {
+  return RACE_TRACKS[((round % RACE_TRACKS.length) + RACE_TRACKS.length) % RACE_TRACKS.length];
+}
+
+// Race the Hamster: the ghost's speed in m/s from the live wheel rpm.
+export function ghostSpeed(rpm: number, running: boolean): number {
+  if (!running) return 0;
+  return Math.min(40, Math.max(12, rpm * 0.85));
+}
+
 // Stars needed before a region opens on the map.
-export const REGION_GATE: Record<TrackId, number> = { meadow: 0, kitchen: 4, burrow: 10 };
+export const REGION_GATE: Record<TrackId, number> = { wheel: 0, meadow: 0, kitchen: 4, burrow: 10 };
 
 export interface Upgrade {
   id: UpgradeId;
@@ -157,7 +186,9 @@ export function eventById(id: string): EventDef | undefined {
 
 // 0..3 stars from a result value.
 export function starsFor(e: EventDef, value: number): number {
-  if (e.kind === "race") return value <= e.stars[2] ? 3 : value <= e.stars[1] ? 2 : value <= e.stars[0] ? 1 : 0;
+  // Race the Hamster reports its stars directly
+  if (e.kind === "ghost") return Math.max(0, Math.min(3, Math.round(value)));
+  if (e.kind === "race" || e.kind === "round") return value <= e.stars[2] ? 3 : value <= e.stars[1] ? 2 : value <= e.stars[0] ? 1 : 0;
   if (e.kind === "trial") return value <= e.stars[2] ? 3 : value <= e.stars[1] ? 2 : value <= e.stars[0] ? 1 : 0;
   return value >= e.stars[2] ? 3 : value >= e.stars[1] ? 2 : value >= e.stars[0] ? 1 : 0;
 }

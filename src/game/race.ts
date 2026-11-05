@@ -1,7 +1,13 @@
 // One race session: renderer, scene, karts, items, rules, effects and camera.
 import * as THREE from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { ambience, drive, musicFast, sfx, stopAll } from "./audio";
-import { CHARACTERS, RUSH_SECONDS, TRACKS, TRACK_SCALE, type Character, type EventDef, type UpgradeId } from "./data";
+import type { ChainState } from "../core/feed";
+import { CHARACTERS, RUSH_SECONDS, TRACKS, TRACK_SCALE, ghostSpeed, type Character, type EventDef, type UpgradeId } from "./data";
 import { readInput, takePause } from "./input";
 import { BOMB_RADIUS, ITEMS, ITEM_LIST, ROLL_TIME, SHOT_SPEED, rollItem, stepBomb, stepShot, type Bomb, type ItemId, type Shot, type Trap } from "./items";
 import { DRIFT_BLUE, DRIFT_ORANGE, NO_INPUT, giveBoost, hitKart, newBrain, spawnKart, statsFor, stepKart, think, type Brain, type Input, type Kart, type Stats } from "./kart";
@@ -24,6 +30,7 @@ export interface Racer {
   padCool: number;
   itemT: number; // AI: seconds it has held its item
   spinAngle: number;
+  ghost: boolean;
 }
 
 export interface Hud {
@@ -49,6 +56,17 @@ export interface Hud {
   rolling: boolean;
   shield: boolean;
   hit: number; // seconds since the player was hit
+  ghost: { rpm: number; asleep: boolean; gap: number } | null;
+  chain: ChainState | null;
+  pick: "yes" | "no" | null;
+  startHeight: number | null;
+  standings: { name: string; color: string; player: boolean }[];
+}
+
+export interface PodiumEntry {
+  name: string;
+  look: { fur: number; belly: number; kart: number };
+  player: boolean;
 }
 
 export interface RaceResult {
@@ -58,16 +76,36 @@ export interface RaceResult {
   seeds: number;
   bestLap: number | null;
   hits: number;
+  ghostWon: boolean | null; // Race the Hamster: did Squeek finish first
+  ghostAvg: number; // Race the Hamster: Squeek's average speed in m/s
+  prediction: Prediction | null;
+  podium: PodiumEntry[];
 }
 
 export type RaceMsg = { text: string; tone: "info" | "good" | "warn" | "bad" };
+
+export interface LiveData {
+  running: boolean;
+  fever: boolean;
+  source: string;
+  rpm: number;
+  chain: ChainState | null;
+}
+
+export interface Prediction {
+  pick: "yes" | "no";
+  start: ChainState | null;
+  end: ChainState | null;
+  correct: boolean | null; // null when chain data was missing
+}
 
 export interface RaceConfig {
   event: EventDef;
   char: Character;
   upgrades: Record<UpgradeId, number>;
   quality: "high" | "low";
-  live: () => { running: boolean; fever: boolean; source: string };
+  live: () => LiveData;
+  prediction?: "yes" | "no" | null;
   onFinish: (r: RaceResult) => void;
   onMsg: (m: RaceMsg) => void;
   onPause: () => void;
@@ -251,12 +289,19 @@ export class Race {
   hits = 0;
   rngSeed = 12345;
   items: boolean;
+  ghost: Racer | null = null;
+  ghostCur = 0;
+  ghostSum = 0;
+  ghostTime = 0;
+  live: LiveData = { running: false, fever: false, source: "demo", rpm: 0, chain: null };
+  chainStart: ChainState | null = null;
+  composer: EffectComposer | null = null;
   tpl = { acorn: buildAcorn(), cheese: buildCheese(), pepper: buildPepper(), bomb: buildBomb() };
 
   constructor(host: HTMLElement, cfg: RaceConfig) {
     this.cfg = cfg;
     this.host = host;
-    this.items = cfg.event.kind === "race";
+    this.items = cfg.event.kind === "race" || cfg.event.kind === "round";
     const def = TRACKS[cfg.event.track];
     this.width = def.width;
     this.path = buildPath(def.points, TRACK_SCALE);
@@ -270,17 +315,29 @@ export class Race {
     this.renderer.domElement.className = "raceCanvas";
     host.appendChild(this.renderer.domElement);
 
-    this.scene.background = new THREE.Color(def.theme.sky);
+    this.scene.background = skyTexture(def.theme.sky, def.theme.fog, def.theme.night);
+    // soft studio reflections on the glossy karts
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = def.theme.night ? 0.25 : 0.45;
+    pmrem.dispose();
     this.scene.fog = new THREE.Fog(def.theme.fog, def.theme.fogNear, def.theme.fogFar);
     this.world = buildWorld(def, this.path, { shadows: high, rush: cfg.event.kind === "rush" });
     this.scene.add(this.world.group);
     this.scene.add(this.fx.points, this.fire.points, this.smoke.points, this.flash);
 
     this.spawnRacers();
+    if (cfg.event.kind === "ghost") this.spawnGhost();
     this.spawnSeeds();
     if (this.items) this.spawnBoxes();
     this.buildMap();
 
+    if (high) {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), def.theme.night ? 0.75 : 0.42, 0.5, def.theme.night ? 0.62 : 0.86));
+      this.composer.addPass(new OutputPass());
+    }
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(host);
     this.resize();
@@ -319,7 +376,7 @@ export class Race {
           n: this.racers.length, name: this.cfg.char.name, char: look, kart, model, bubble,
           stats: statsFor(this.cfg.char, this.cfg.upgrades),
           brain: this.cfg.autopilot ? newBrain(99, 1) : null,
-          player: true, color: "#ffc83d", topMul: 0.98, padCool: 0, itemT: 0, spinAngle: 0,
+          player: true, color: "#ffc83d", topMul: 0.98, padCool: 0, itemT: 0, spinAngle: 0, ghost: false,
         };
         this.racers.push(this.player);
       } else {
@@ -330,11 +387,42 @@ export class Race {
           n: this.racers.length, name: rv.name, char: rv, kart, model, bubble,
           stats: statsFor(base, { engine: aiUp, tires: aiUp, turbo: aiUp }),
           brain: newBrain(31 + r * 101, 1),
-          player: false, color: hex(rv.kart), topMul: 0.8 + e.difficulty * 0.14 + spread, padCool: 0, itemT: 0, spinAngle: 0,
+          player: false, color: hex(rv.kart), topMul: 0.8 + e.difficulty * 0.14 + spread, padCool: 0, itemT: 0, spinAngle: 0, ghost: false,
         });
         r++;
       }
     }
+  }
+
+  spawnGhost() {
+    const look = { fur: 0xe8a65a, belly: 0xfff0d4, kart: 0xffc83d };
+    const kart = spawnKart(this.path, this.path.n - 6, this.width * 0.42);
+    const model = buildKart(look);
+    model.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const cl = (m.material as THREE.Material).clone() as THREE.MeshStandardMaterial;
+      cl.transparent = true;
+      cl.opacity = 0.6;
+      if ("emissive" in cl) {
+        cl.emissive = new THREE.Color(0x6a4a10);
+        cl.emissiveIntensity = 0.6;
+      }
+      m.material = cl;
+      m.castShadow = false;
+    });
+    const bubble = buildBubble();
+    model.root.add(bubble);
+    this.scene.add(model.root);
+    const st = statsFor({ speed: 5, accel: 4, handling: 5 }, { engine: 4, tires: 4, turbo: 0 });
+    this.ghost = {
+      n: this.racers.length, name: "Squeek", char: look, kart, model, bubble, stats: { ...st, max: 44, grass: 0.9 },
+      brain: newBrain(77, 1), player: false, color: "#ffffff", topMul: 1, padCool: 0, itemT: 0, spinAngle: 0, ghost: true,
+    };
+    this.racers.push(this.ghost);
+    // the player lines up on the other side of the grid
+    const p = this.player.kart;
+    Object.assign(p, spawnKart(this.path, this.path.n - 6, -this.width * 0.42));
   }
 
   spawnSeeds() {
@@ -395,6 +483,7 @@ export class Race {
     const w = this.host.clientWidth || 1;
     const h = this.host.clientHeight || 1;
     this.renderer.setSize(w, h, false);
+    this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.fov = w / h < 0.8 ? 78 : 62;
     this.camera.updateProjectionMatrix();
@@ -408,7 +497,7 @@ export class Race {
 
   loop = (now: number) => {
     this.raf = requestAnimationFrame(this.loop);
-    let dt = Math.min(0.05, (now - this.last) / 1000);
+    let dt = Math.max(0, Math.min(0.05, (now - this.last) / 1000));
     this.last = now;
     if (takePause() && this.phase !== "done") this.cfg.onPause();
     if (!this.paused) {
@@ -424,7 +513,8 @@ export class Race {
       if (steps === 40) this.acc = 0;
       this.visuals(dt);
     }
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
     this.drawMap();
   };
 
@@ -442,6 +532,7 @@ export class Race {
     this.clock += dt;
     this.hitAgo += dt;
     const live = this.cfg.live();
+    this.live = live;
     if (live.running !== this.liveRunning) {
       this.liveRunning = live.running;
       if (this.phase === "race") this.cfg.onMsg(live.running ? { text: "Real hamster is running: turbo charges 2x", tone: "good" } : { text: "Real hamster is napping", tone: "info" });
@@ -466,6 +557,7 @@ export class Race {
       }
       if (this.countdown <= 0) {
         this.phase = "race";
+        this.chainStart = live.chain ? { ...live.chain } : null;
         this.lapStart = 0;
         this.lastPlace = this.placeOf(this.player);
         sfx.go();
@@ -481,7 +573,16 @@ export class Race {
     for (const r of this.racers) {
       const k = r.kart;
       let inp: Input;
-      if (r.brain) {
+      if (r.ghost) {
+        const target = ghostSpeed(live.rpm, live.running);
+        this.ghostCur += (target - this.ghostCur) * Math.min(1, dt * 0.9);
+        if (this.phase === "race" && !k.finished) {
+          this.ghostSum += target * dt;
+          this.ghostTime += dt;
+        }
+        inp = think(k, r.brain!, this.path, this.width, dt, this.ghostCur);
+        if (this.ghostCur < 2) inp = { ...NO_INPUT, brake: k.speed > 0.5 ? 1 : 0 };
+      } else if (r.brain) {
         const gap = this.prog(r) - pProg;
         const rubber = r.player ? 1 : gap < -0.08 ? 1.08 : gap > 0.12 ? 0.94 : 1;
         inp = think(k, r.brain, this.path, this.width, dt, r.stats.max * r.topMul * rubber);
@@ -555,7 +656,7 @@ export class Race {
       k.itemHeld = inp.item;
 
       if (ev.lap && r.player && !k.finished && e.kind !== "rush") this.playerLap();
-      if (ev.lap && !r.player && !k.finished && k.lap.lap >= e.laps && e.kind === "race") {
+      if (ev.lap && !r.player && !k.finished && k.lap.lap >= e.laps && (e.kind === "race" || e.kind === "round" || e.kind === "ghost")) {
         k.finished = true;
         k.finishTime = this.raceTime;
         this.finishOrder.push(r);
@@ -568,7 +669,7 @@ export class Race {
       this.stepWeapons(dt);
     }
 
-    if (this.phase === "race" && e.kind === "race") {
+    if (this.phase === "race" && (e.kind === "race" || e.kind === "round")) {
       const place = this.placeOf(this.player);
       if (place !== this.lastPlace && this.lastPlace) sfx.overtake(place < this.lastPlace);
       this.lastPlace = place;
@@ -577,13 +678,20 @@ export class Race {
     if (e.kind === "rush" && this.phase === "race" && this.raceTime >= RUSH_SECONDS) this.finishPlayer();
     if (this.phase === "done" && !this.result && this.clock - this.doneAt > 2.8) {
       const place = this.finishOrder.indexOf(this.player) + 1 || this.placeOf(this.player);
+      const ghostWon = this.ghost ? this.finishOrder.indexOf(this.ghost) === 0 : null;
+      const ghostAvg = this.ghostTime > 0 ? this.ghostSum / this.ghostTime : 0;
+      const ghostStars = ghostWon === null ? 0 : ghostWon ? 1 : ghostAvg >= 20 ? 3 : 2;
       this.result = {
-        value: e.kind === "race" ? place : e.kind === "trial" ? Math.round(this.player.kart.finishTime * 100) / 100 : this.collected,
+        value: e.kind === "race" || e.kind === "round" ? place : e.kind === "ghost" ? ghostStars : e.kind === "trial" ? Math.round(this.player.kart.finishTime * 100) / 100 : this.collected,
         place,
         time: this.player.kart.finishTime,
         seeds: this.collected,
         bestLap: this.bestLap,
         hits: this.hits,
+        ghostWon,
+        ghostAvg,
+        prediction: this.predictionResult(),
+        podium: this.order().slice(0, 3).map((r) => ({ name: r.name, look: { fur: r.char.fur, belly: r.char.belly, kart: r.char.kart }, player: r.player })),
       };
       this.cfg.onFinish(this.result);
     }
@@ -856,6 +964,10 @@ export class Race {
     return progress(r.kart.lap, r.kart.idx, this.path.n);
   }
 
+  order(): Racer[] {
+    return [...this.racers].sort((a, b) => this.prog(b) - this.prog(a));
+  }
+
   placeOf(r: Racer): number {
     const sorted = [...this.racers].sort((a, b) => this.prog(b) - this.prog(a));
     return sorted.indexOf(r) + 1;
@@ -878,7 +990,19 @@ export class Race {
     this.cfg.onMsg({ text: final ? "Final lap!" : `Lap ${k.lap.lap + 1}`, tone: final ? "warn" : "info" });
   }
 
+  chainEnd: ChainState | null = null;
+
+  predictionResult(): Prediction | null {
+    const pick = this.cfg.prediction;
+    if (this.cfg.event.kind !== "round" || !pick) return null;
+    const start = this.chainStart;
+    const end = this.chainEnd;
+    const correct = start && end ? (pick === "yes") === end.height > start.height : null;
+    return { pick, start, end, correct };
+  }
+
   finishPlayer() {
+    this.chainEnd = this.live.chain ? { ...this.live.chain } : null;
     const k = this.player.kart;
     k.finished = true;
     k.finishTime = this.raceTime;
@@ -890,11 +1014,12 @@ export class Race {
     k.item = null;
     const e = this.cfg.event;
     const place = this.finishOrder.indexOf(this.player) + 1;
-    const good = e.kind !== "race" || place <= 3;
+    const beatGhost = this.ghost ? this.finishOrder.indexOf(this.ghost) < 0 : true;
+    const good = e.kind === "ghost" ? beatGhost : e.kind === "race" || e.kind === "round" ? place <= 3 : true;
     sfx.finish(good);
     musicFast(false);
     if (good) for (let i = 0; i < 4; i++) this.fx.burst(k.x, 4, k.z, 40, 8, 10, [C_GOLD, C_PINK, C_BLUE, C_WHITE][i], 1.4, 5);
-    this.cfg.onMsg({ text: e.kind === "race" ? `Finished ${ordinal(place)}!` : e.kind === "rush" ? `Time! ${this.collected} seeds` : "Finished!", tone: good ? "good" : "info" });
+    this.cfg.onMsg({ text: e.kind === "ghost" ? (beatGhost ? "You beat Squeek!" : "Squeek wins this time") : e.kind === "race" || e.kind === "round" ? `Finished ${ordinal(place)}!` : e.kind === "rush" ? `Time! ${this.collected} seeds` : "Finished!", tone: good ? "good" : "info" });
     drive(null);
   }
 
@@ -903,6 +1028,7 @@ export class Race {
     const R = 1.7;
     for (let a = 0; a < rs.length; a++)
       for (let b = a + 1; b < rs.length; b++) {
+        if (rs[a].ghost || rs[b].ghost) continue;
         const ka = rs[a].kart;
         const kb = rs[b].kart;
         const dx = kb.x - ka.x;
@@ -945,7 +1071,7 @@ export class Race {
         continue;
       }
       for (const r of this.racers) {
-        if (rush && !r.player) continue;
+        if ((rush && !r.player) || r.ghost) continue;
         const dx = r.kart.x - s.x;
         const dz = r.kart.z - s.z;
         if (dx * dx + dz * dz > 4.4) continue;
@@ -966,6 +1092,12 @@ export class Race {
 
   visuals(dt: number) {
     this.world.tick(this.clock);
+    const lv = this.live;
+    this.world.live({ rpm: lv.rpm, running: lv.running, source: lv.source, height: lv.chain?.height ?? null, progress: lv.chain?.progress ?? null, round: lv.chain?.round ?? null }, this.clock, dt);
+    if (this.ghost && this.ghostCur < 2 && Math.random() < 0.08) {
+      const g = this.ghost.kart;
+      this.fx.emit(g.x, 3, g.z, 0.5, 1.2, 0, C_WHITE, 1.2, 0);
+    }
     for (const r of this.racers) {
       const k = r.kart;
       const m = r.model;
@@ -1147,6 +1279,7 @@ export class Race {
   }
 
   hud(): Hud {
+    const lv0 = this.live;
     const k = this.player.kart;
     const e = this.cfg.event;
     const along = Math.atan2(this.path.tx[k.idx], this.path.tz[k.idx]);
@@ -1173,6 +1306,11 @@ export class Race {
       rolling: k.roll > 0,
       shield: k.shield > 0,
       hit: this.hitAgo,
+      ghost: this.ghost ? { rpm: lv0.rpm, asleep: !lv0.running, gap: (this.prog(this.ghost) - this.prog(this.player)) * this.path.length } : null,
+      chain: lv0.chain,
+      pick: this.cfg.prediction ?? null,
+      startHeight: this.chainStart?.height ?? null,
+      standings: this.racers.length > 1 ? this.order().map((r) => ({ name: r.name, color: r.color, player: r.player })) : [],
     };
   }
 
@@ -1186,12 +1324,33 @@ export class Race {
       const m = o as THREE.Mesh;
       if (m.geometry && m.geometry !== BLAST_BALL && m.geometry !== BLAST_RING) m.geometry.dispose();
     });
+    this.composer?.dispose();
+    this.scene.environment?.dispose();
+    (this.scene.background as THREE.Texture | null)?.dispose?.();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
 }
 
 export { ITEMS };
+
+// A vertical gradient for the sky: deeper colour overhead, hazy near the horizon.
+function skyTexture(sky: number, haze: number, night: boolean): THREE.Texture {
+  const cv = document.createElement("canvas");
+  cv.width = 4;
+  cv.height = 256;
+  const c = cv.getContext("2d")!;
+  const top = new THREE.Color(sky).multiplyScalar(night ? 0.6 : 0.78);
+  const g = c.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, `#${top.getHexString()}`);
+  g.addColorStop(0.55, `#${new THREE.Color(sky).getHexString()}`);
+  g.addColorStop(1, `#${new THREE.Color(haze).getHexString()}`);
+  c.fillStyle = g;
+  c.fillRect(0, 0, 4, 256);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 export function ordinal(n: number): string {
   const s = ["th", "st", "nd", "rd"];

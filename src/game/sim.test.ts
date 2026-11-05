@@ -64,7 +64,9 @@ assert.deepEqual(m, s);
 assert.equal(migrateSave({ v: 1, char: "ghost", owned: ["ghost"], seeds: -5, upgrades: { engine: 99 } }, 2)!.char, "squeek");
 assert.equal(migrateSave({ v: 1, upgrades: { engine: 99 } }, 2)!.upgrades.engine, 4);
 assert.equal(migrateSave(null, 1), null);
-assert.equal(EVENTS.length, 9);
+assert.equal(EVENTS.length, 11);
+assert.equal(starsFor(eventById("wheel-ghost")!, 3), 3);
+assert.equal(starsFor(eventById("wheel-round")!, 1), 3);
 
 // a rival can lap every track and is held to the road
 for (const id of TRACK_ORDER) {

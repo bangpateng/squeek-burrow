@@ -12,6 +12,7 @@ export function useWheel() {
     distanceMm: null,
     speedMmps: 0,
     workUnits: null,
+    chain: null,
     source: live ? "offline" : "demo",
   });
   const [feverUntil, setFeverUntil] = useState(0);

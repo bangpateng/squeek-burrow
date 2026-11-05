@@ -3,9 +3,10 @@ import { music } from "../game/audio";
 import { CHARACTERS, TRACKS, type EventDef } from "../game/data";
 import { attachKeys, clearTouch, touch } from "../game/input";
 import { isTouch, type Prefs } from "../game/prefs";
-import { ITEMS, Race, fmtTime, ordinal, type Hud, type RaceMsg, type RaceResult } from "../game/race";
+import { ITEMS, Race, fmtTime, ordinal, type Hud, type LiveData, type RaceMsg, type RaceResult } from "../game/race";
 import type { GameSave } from "../game/save";
 import { Stars } from "./Common";
+import { Podium } from "./Podium";
 import { SoundControls } from "./Settings";
 
 export interface Finished {
@@ -14,13 +15,15 @@ export interface Finished {
   seeds: number;
   bonus: boolean;
   newBest: boolean;
+  predicted: number; // extra seeds from a correct Round Cup prediction
 }
 
 interface Props {
   event: EventDef;
+  prediction: "yes" | "no" | null;
   save: GameSave;
   prefs: Prefs;
-  liveRef: MutableRefObject<{ running: boolean; fever: boolean; source: string }>;
+  liveRef: MutableRefObject<LiveData>;
   onFinish: (r: RaceResult) => Finished;
   onQuit: () => void;
   onNext: (() => void) | null;
@@ -40,7 +43,7 @@ function Pad({ k, label, className }: { k: TouchKey; label: string; className?: 
   );
 }
 
-export function RaceView({ event, save, prefs, liveRef, onFinish, onQuit, onNext }: Props) {
+export function RaceView({ event, prediction, save, prefs, liveRef, onFinish, onQuit, onNext }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
   const race = useRef<Race | null>(null);
@@ -68,6 +71,7 @@ export function RaceView({ event, save, prefs, liveRef, onFinish, onQuit, onNext
         upgrades: save.upgrades,
         quality: prefs.quality,
         live: () => liveRef.current,
+        prediction,
         onFinish: (res) => setDone(finishRef.current(res)),
         onMsg: (m) => setMsg({ ...m, id: Math.random() }),
         onPause: () => setPaused((p) => !p),
@@ -139,7 +143,7 @@ export function RaceView({ event, save, prefs, liveRef, onFinish, onQuit, onNext
       {h && h.hit < 0.6 && <div className="hitFlash" aria-hidden="true" />}
       <div className="hud">
         <div className="hudTL">
-          {event.kind === "race" && h && (
+          {(event.kind === "race" || event.kind === "round" || event.kind === "ghost") && h && (
             <div className="place">
               <strong>{ordinal(h.place)}</strong>
               <span>/ {h.of}</span>
@@ -149,6 +153,17 @@ export function RaceView({ event, save, prefs, liveRef, onFinish, onQuit, onNext
             <div className="lap">
               Lap <b>{h.lap}</b>/{h.laps}
             </div>
+          )}
+          {h && h.standings.length > 1 && (
+            <ol className="standings">
+              {h.standings.map((r, i) => (
+                <li key={r.name} className={r.player ? "you" : ""}>
+                  <b>{i + 1}</b>
+                  <i style={{ background: r.color }} />
+                  {r.player ? "You" : r.name}
+                </li>
+              ))}
+            </ol>
           )}
           {event.kind === "rush" && h && (
             <div className="place">
@@ -200,6 +215,24 @@ export function RaceView({ event, save, prefs, liveRef, onFinish, onQuit, onNext
           </div>
         )}
 
+        {h?.ghost && (
+          <div className={`livePanel ghostPanel${h.ghost.asleep ? " asleep" : ""}`}>
+            <span>Squeek, live from the wheel</span>
+            <strong>{h.ghost.asleep ? "Napping z z z" : `${Math.round(h.ghost.rpm)} rpm`}</strong>
+            <small>{h.ghost.gap > 0 ? `${Math.round(h.ghost.gap)} m ahead of you` : `${Math.round(-h.ghost.gap)} m behind you`}</small>
+          </div>
+        )}
+        {event.kind === "round" && h && (
+          <div className="livePanel chainPanel">
+            <span>
+              {!h.chain ? "Chain data unavailable" : h.startHeight !== null && h.chain.height > h.startHeight ? `Block ${h.startHeight + 1} done!` : `Building block ${h.chain.height + 1}`}
+            </span>
+            <div className="chainBar">
+              <b style={{ width: `${h.chain && h.startHeight !== null && h.chain.height > h.startHeight ? 100 : Math.round((h.chain?.progress ?? 0) * 100)}%` }} />
+            </div>
+            <small>Your call: {h.pick === "yes" ? "it finishes first" : h.pick === "no" ? "you finish first" : "none"}</small>
+          </div>
+        )}
         <div className="hudBL">
           <div className="speedo">
             <strong>{h?.speed ?? 0}</strong>
@@ -254,9 +287,10 @@ export function RaceView({ event, save, prefs, liveRef, onFinish, onQuit, onNext
       {done && (
         <div className="modal">
           <div className="sheet result">
+            {done.result.podium.length > 0 && <Podium entries={done.result.podium} />}
             <span className="kind">{event.name}</span>
             <h2>
-              {event.kind === "race" ? `${ordinal(done.result.place)} place` : event.kind === "trial" ? fmtTime(done.result.time) : `${done.result.seeds} seeds`}
+              {event.kind === "ghost" ? (done.result.ghostWon ? "Squeek won" : "You beat Squeek!") : event.kind === "race" || event.kind === "round" ? `${ordinal(done.result.place)} place` : event.kind === "trial" ? fmtTime(done.result.time) : `${done.result.seeds} seeds`}
             </h2>
             <div className="bigStars">
               <Stars n={done.stars} />
@@ -267,6 +301,14 @@ export function RaceView({ event, save, prefs, liveRef, onFinish, onQuit, onNext
               {event.kind !== "rush" && <li>Seeds picked up {done.result.seeds}</li>}
               {event.kind === "race" && <li>Times you got hit {done.result.hits}</li>}
               {done.newBest && <li className="good">New personal best</li>}
+              {event.kind === "ghost" && <li>Squeek averaged {Math.round(done.result.ghostAvg * 3.6)} km/h from the real wheel{done.result.ghostAvg < 20 && !done.result.ghostWon ? ". Beat an awake Squeek for 3 stars" : ""}</li>}
+              {done.result.prediction && (
+                <li className={done.result.prediction.correct ? "good" : ""}>
+                  {done.result.prediction.correct === null
+                    ? "Chain data was missing, so the prediction did not count"
+                    : `${done.result.prediction.end && done.result.prediction.start && done.result.prediction.end.height > done.result.prediction.start.height ? `Block ${done.result.prediction.end.height} finished before you` : "The block was not finished yet"}. Prediction ${done.result.prediction.correct ? `correct: +${done.predicted} seeds` : "wrong"}`}
+                </li>
+              )}
             </ul>
             <p className="earned">
               +{done.seeds} seeds{done.bonus && <span className="bonus"> including the 25% running-hamster bonus</span>}

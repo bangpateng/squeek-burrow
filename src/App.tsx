@@ -5,9 +5,9 @@ import { RaceView, type Finished } from "./components/RaceView";
 import { Help, Settings } from "./components/Settings";
 import { Title } from "./components/Title";
 import { music, sfx, unlockAudio } from "./game/audio";
-import { EVENTS, type EventDef } from "./game/data";
+import { EVENTS, roundTrack, type EventDef } from "./game/data";
 import { loadPrefs, savePrefs, type Prefs } from "./game/prefs";
-import type { RaceResult } from "./game/race";
+import type { LiveData, RaceResult } from "./game/race";
 import { applyResult, buyUpgrade, clearSave, loadSave, newSave, regionOpen, selectChar, unlockChar, writeSave, type GameSave } from "./game/save";
 import { useWheel } from "./hooks/useWheel";
 
@@ -21,8 +21,9 @@ export default function App() {
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [confirmNew, setConfirmNew] = useState(false);
   const { wheel, fever } = useWheel();
-  const liveRef = useRef({ running: false, fever: false, source: "demo" });
-  liveRef.current = { running: wheel.running, fever, source: wheel.source };
+  const liveRef = useRef<LiveData>({ running: false, fever: false, source: "demo", rpm: 0, chain: null });
+  liveRef.current = { running: wheel.running, fever, source: wheel.source, rpm: wheel.rpm, chain: wheel.chain };
+  const [prediction, setPrediction] = useState<"yes" | "no" | null>(null);
 
   useEffect(() => {
     const go = () => {
@@ -60,18 +61,19 @@ export default function App() {
     const cur = save!;
     const bonus = liveRef.current.running && liveRef.current.source !== "offline";
     const out = applyResult(cur, event!.id, r.value, bonus ? 1.25 : 1);
-    const seeds = out.seeds + r.seeds;
-    const next = { ...out.save, seeds: out.save.seeds + r.seeds };
+    const predicted = r.prediction?.correct === true ? out.seeds : 0;
+    const seeds = out.seeds + r.seeds + predicted;
+    const next = { ...out.save, seeds: out.save.seeds + r.seeds + predicted };
     setSave(next);
     for (let i = 0; i < out.stars; i++) setTimeout(() => sfx.star(i), 300 + i * 250);
-    return { result: r, stars: out.stars, seeds, bonus, newBest: out.newBest };
+    return { result: r, stars: out.stars, seeds, bonus, newBest: out.newBest, predicted };
   };
 
   const nextEvent = (() => {
     if (!event || !save) return null;
     const i = EVENTS.findIndex((e) => e.id === event.id);
     const n = EVENTS[i + 1];
-    return n && regionOpen(save, n.track) ? n : null;
+    return n && n.kind !== "round" && regionOpen(save, n.track) ? n : null;
   })();
 
   return (
@@ -95,9 +97,11 @@ export default function App() {
           fever={fever}
           onBack={() => nav("title")}
           onGarage={() => nav("garage", "map")}
-          onStart={(e) => {
+          onStart={(e, pick) => {
             sfx.go();
-            setEvent(e);
+            setPrediction(pick);
+            // the Round Cup races on the track picked by the current settled round
+            setEvent(e.kind === "round" && wheel.chain ? { ...e, track: roundTrack(wheel.chain.round) } : e);
             setScreen("race");
           }}
         />
@@ -142,8 +146,9 @@ export default function App() {
       {screen === "help" && <Help onBack={() => nav(back)} />}
       {screen === "race" && save && event && (
         <RaceView
-          key={event.id}
+          key={event.id + event.track}
           event={event}
+          prediction={prediction}
           save={save}
           prefs={prefs}
           liveRef={liveRef}

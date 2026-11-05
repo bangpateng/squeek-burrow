@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import type { TrackDef } from "./data";
 import { WALL_GAP } from "./kart";
+import { buildArena, type LiveView } from "./arena";
 import { buildSeed, canvasTexture, mat } from "./models";
 import { rightAt, wrap, type TrackPath } from "./track";
 
@@ -18,6 +19,7 @@ export interface World {
   seedSpots: { x: number; z: number; i: number }[];
   sun: THREE.DirectionalLight;
   tick: (t: number) => void;
+  live: (v: LiveView, t: number, dt: number) => void;
   dispose: () => void;
 }
 
@@ -369,6 +371,7 @@ export function buildWorld(def: TrackDef, path: TrackPath, opts: { shadows: bool
       return [cx + Math.cos(a) * radius * (0.9 + rand() * 0.2), cz + Math.sin(a) * radius * (0.9 + rand() * 0.2)];
     });
   const sh = opts.shadows;
+  let arena: ReturnType<typeof buildArena> | null = null;
 
   if (def.id === "meadow") {
     const trees = spots(110);
@@ -410,6 +413,18 @@ export function buildWorld(def: TrackDef, path: TrackPath, opts: { shadows: bool
     const boxes = ring(22, 480).map(([x, z]) => m4(x, 60, z, rand() * 6, 60 + rand() * 30, 120 + rand() * 60, 25));
     const boxCols = [0xe2463f, 0x3a8dde, 0xf2b630, 0x5bbf6a];
     boxCols.forEach((col, ci) => g.add(instanced(new THREE.BoxGeometry(1, 1, 1), mat(col), boxes.filter((_, i) => i % 4 === ci), false)));
+  } else if (def.id === "wheel") {
+    arena = buildArena(g, cx, cz, ring, sh);
+    disposables.push(...arena.disposables);
+    // flower beds and bushes around the infield
+    const bushes = spots(60, true).map(([x, z]) => m4(x, 1, z, rand() * 6, 2 + rand() * 1.5, 1.4, 2 + rand() * 1.5));
+    g.add(instanced(new THREE.IcosahedronGeometry(1, 0), mat(0x4f9e45), bushes, sh));
+    const flags = spots(30, true);
+    g.add(instanced(new THREE.CylinderGeometry(0.12, 0.12, 6, 5), mat(0xdddddd), flags.map(([x, z]) => m4(x, 3, z)), false));
+    ["#ffc83d", "#e2463f", "#8a6bff"].forEach((col, ci) => {
+      const items = flags.filter((_, i) => i % 3 === ci).map(([x, z]) => m4(x + 0.9, 5.3, z, 0, 1));
+      g.add(instanced(new THREE.BoxGeometry(1.8, 1.1, 0.08), mat(parseInt(col.slice(1), 16), { emissive: parseInt(col.slice(1), 16) }), items, false));
+    });
   } else {
     const shrooms = spots(110, true);
     const capCols = [0x2ee6c8, 0x8a6bff, 0xff7ad9];
@@ -461,7 +476,16 @@ export function buildWorld(def: TrackDef, path: TrackPath, opts: { shadows: bool
     }
     const sg = new THREE.BufferGeometry();
     sg.setAttribute("position", new THREE.Float32BufferAttribute(sp, 3));
-    g.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, sizeAttenuation: false, fog: false })));
+    const starTex = canvasTexture(32, 32, (c) => {
+      const gr = c.createRadialGradient(16, 16, 0, 16, 16, 16);
+      gr.addColorStop(0, "rgba(255,255,255,1)");
+      gr.addColorStop(0.4, "rgba(255,255,255,0.6)");
+      gr.addColorStop(1, "rgba(255,255,255,0)");
+      c.fillStyle = gr;
+      c.fillRect(0, 0, 32, 32);
+    });
+    disposables.push(starTex);
+    g.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, map: starTex, transparent: true, depthWrite: false, size: 3, sizeAttenuation: false, fog: false })));
     disposables.push(sg);
   }
 
@@ -496,6 +520,7 @@ export function buildWorld(def: TrackDef, path: TrackPath, opts: { shadows: bool
     seedSpots,
     sun,
     tick: (t) => ticks.forEach((f) => f(t)),
+    live: (v, t, dt) => arena?.live(v, t, dt),
     dispose: () => {
       disposables.forEach((d) => d.dispose());
       g.traverse((o) => {

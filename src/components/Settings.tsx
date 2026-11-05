@@ -92,6 +92,10 @@ export function Help({ onBack }: { onBack: () => void }) {
           <p>
             The game reads the live Squeekchain hamster wheel. While it runs, your turbo tank fills twice as fast and you earn 25% more seeds. When it hits a milestone or a speed record, Squeek fever fills your tank instantly.
           </p>
+          <h2>Squeek's Wheel</h2>
+          <p>
+            Race the Hamster pits you against a ghost of Squeek that drives exactly as fast as the real hamster is running right now. In the Round Cup you predict whether the next Squeekchain block is finished before you cross the line; the real chain decides, and a correct call doubles your seeds.
+          </p>
         </section>
         <section className="card">
           <h2>Keyboard</h2>

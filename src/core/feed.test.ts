@@ -25,6 +25,14 @@ assert.ok(p);
 assert.equal(p.workUnits, 84732);
 assert.equal(parseStatus(idle)?.workUnits, null);
 
+// chain fields from the real response
+p = parseStatus({ measurement: { freshness: "online", rpmMilli: 0, speedMmPerSecond: 0, distanceMm: 0 }, builder: { anchor: { blockHeight: "7661", blockProgress: "911286742", settledThroughRound: "1189" }, projected: { blockHeight: "7661", blockProgress: "911286742" } } });
+assert.ok(p?.chain);
+assert.equal(p.chain.height, 7661);
+assert.ok(Math.abs(p.chain.progress - 0.911286742) < 1e-9);
+assert.equal(p.chain.round, 1189);
+assert.equal(parseStatus(idle)?.chain, null);
+
 // junk is rejected
 assert.equal(parseStatus(null), null);
 assert.equal(parseStatus({}), null);
