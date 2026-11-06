@@ -40,7 +40,8 @@ function glyphGeometry(d: string): THREE.BufferGeometry {
 const dotMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
 const coreMat = new THREE.MeshStandardMaterial({ color: 0x0c0b12, roughness: 0.85, side: THREE.DoubleSide });
 
-export function buildDotFigure(f: SqueekDots, height: number): THREE.Group {
+// lite: for rivals, half the dots on the back and no rim, which they rarely show up close
+export function buildDotFigure(f: SqueekDots, height: number, lite = false): THREE.Group {
   const group = new THREE.Group();
   const maxY = Math.max(...f.dots.map((d) => d.y));
   const S = height / maxY; // art units -> world
@@ -151,7 +152,9 @@ export function buildDotFigure(f: SqueekDots, height: number): THREE.Group {
   // rare glyphs are the face features (eyes, cheeks, muzzle): they stay on the front only
   const glyphCount = new Map<string, number>();
   for (const d of f.dots) glyphCount.set(d.glyph, (glyphCount.get(d.glyph) ?? 0) + 1);
+  let n = 0;
   for (const d of f.dots) {
+    n++;
     // a touch bigger than the art so the figure reads at racing distance; tiny dots get a floor
     const glyphScale = f.scale * S * Math.max(1.5, (0.22 * step) / Math.max(d.size, 1e-6));
     const c = col(d.x), r = row(d.y);
@@ -162,8 +165,8 @@ export function buildDotFigure(f: SqueekDots, height: number): THREE.Group {
     push(d.glyph, new THREE.Vector3(x, y, z + 0.002), new THREE.Vector3(-gx, -gy, 1), glyphScale, d.color);
     const white = ((d.color >> 16) & 255) > 235 && ((d.color >> 8) & 255) > 235 && (d.color & 255) > 235;
     const feature = (glyphCount.get(d.glyph) ?? 0) <= 12;
-    if (!white && !feature) push(d.glyph, new THREE.Vector3(x, y, -z - 0.002), new THREE.Vector3(-gx, -gy, -1), glyphScale, d.color, 1);
-    if (dist.get(`${c},${r}`) === 1) {
+    if (!white && !feature && (!lite || n % 2 === 0)) push(d.glyph, new THREE.Vector3(x, y, -z - 0.002), new THREE.Vector3(-gx, -gy, -1), glyphScale, d.color, 1);
+    if (!lite && dist.get(`${c},${r}`) === 1) {
       for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         if (solid(c + dc, r + dr)) continue;
         push(d.glyph, new THREE.Vector3(x + dc * step * S * 0.35, y + dr * step * S * 0.35, 0), new THREE.Vector3(dc, dr, 0), glyphScale, d.color, 0.9);

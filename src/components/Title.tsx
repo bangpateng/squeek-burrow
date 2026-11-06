@@ -1,3 +1,4 @@
+import { useThumb } from "../web3/thumb";
 import type { WheelState } from "../core/feed";
 import type { Character } from "../game/data";
 import type { GameSave } from "../game/save";
@@ -168,7 +169,7 @@ export function Title({ save, wheel, fever, roster, racer, onPlay, onNew, onGara
                 ? Array.from({ length: 6 }, (_, i) => <span key={i} className="nftThumb skeleton" />)
                 : show.slice(0, 6).map((c) => (
                     <span key={c.id} className="nftThumb" title={c.name}>
-                      {c.image ? <img src={c.image} alt={c.name} /> : <i style={{ background: `#${c.kart.toString(16).padStart(6, "0")}` }} />}
+                      {c.image ? <StripArt src={c.image} alt={c.name} /> : <i style={{ background: `#${c.kart.toString(16).padStart(6, "0")}` }} />}
                       <b>{c.tokenId ? `#${c.tokenId}` : c.name}</b>
                     </span>
                   ))}
@@ -196,4 +197,9 @@ export function Title({ save, wheel, fever, roster, racer, onPlay, onNew, onGara
       <Footer />
     </div>
   );
+}
+
+function StripArt({ src, alt }: { src: string; alt: string }) {
+  const url = useThumb(src, 192);
+  return url ? <img src={url} alt={alt} /> : null;
 }

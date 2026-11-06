@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { music } from "../game/audio";
+import { useThumb } from "../web3/thumb";
 import { TRACKS, type Character, type EventDef } from "../game/data";
 import { attachKeys, clearTouch, touch } from "../game/input";
-import { isTouch, type Prefs } from "../game/prefs";
+import { isTouch, loadPrefs, type Prefs } from "../game/prefs";
 import { ITEMS, Race, fmtTime, ordinal, type Hud, type LiveData, type RaceMsg, type RaceResult } from "../game/race";
 import type { GameSave } from "../game/save";
 import { Stars } from "./Common";
@@ -76,7 +77,7 @@ export function RaceView({ event, prediction, save, racer, rivals, prefs, liveRe
         char: racer,
         rivals,
         upgrades: save.upgrades,
-        quality: prefs.quality,
+        quality: loadPrefs().quality, // read fresh: a slow device may have switched itself to Low
         live: () => liveRef.current,
         prediction,
         onFinish: (res) => setDone(finishRef.current(res)),
@@ -339,5 +340,6 @@ export function RaceView({ event, prediction, save, racer, rivals, prefs, liveRe
 
 // Small NFT portrait in the standings. Memoised so the big SVG is decoded once.
 const Thumb = memo(function Thumb({ src }: { src: string }) {
-  return <img className="thumb" src={src} alt="" />;
+  const url = useThumb(src, 48);
+  return url ? <img className="thumb" src={url} alt="" /> : <span className="thumb" />;
 });

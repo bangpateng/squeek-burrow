@@ -143,11 +143,11 @@ export function nftTexture(image: string, key: string): THREE.CanvasTexture {
 
 // A round, fluffy hamster facing +z, sitting with its base at y = 0.
 // Genesis Squeeks (with a palette) get the dark fur with glowing glyph dots from their NFT art.
-export function buildHamster(c: Look): THREE.Group {
+export function buildHamster(c: Look, lite = false): THREE.Group {
   // a Genesis Squeek with readable art: rebuild the NFT itself in 3D
   const dots = dotsFor(c.image, String(c.tokenId ?? c.image?.length ?? 0));
   if (dots) {
-    const fig = buildDotFigure(dots, 1.9);
+    const fig = buildDotFigure(dots, 1.9, lite);
     fig.userData.nftFigure = true;
     return fig;
   }
@@ -222,7 +222,7 @@ export interface KartModel {
   driver: THREE.Group;
 }
 
-export function buildKart(c: Look, scale = 1): KartModel {
+export function buildKart(c: Look, scale = 1, lite = false): KartModel {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
@@ -288,7 +288,7 @@ export function buildKart(c: Look, scale = 1): KartModel {
     flames.push(f);
   }
 
-  const driver = buildHamster(c);
+  const driver = buildHamster(c, lite);
   driver.position.set(0, driver.userData.nftFigure ? 0.1 : 0.42, -0.4);
   driver.scale.setScalar(0.92);
   body.add(driver);

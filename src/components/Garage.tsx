@@ -1,3 +1,4 @@
+import { useThumb } from "../web3/thumb";
 import { useState } from "react";
 import { MAX_UPGRADE, UPGRADES, upgradeCost, type Character } from "../game/data";
 import { canUpgrade, type GameSave } from "../game/save";
@@ -22,7 +23,7 @@ function Card({ c, on, chosen, onPick }: { c: Character; on: boolean; chosen: bo
   return (
     <button className={`sqCard${on ? " on" : ""}`} onClick={onPick} aria-pressed={on}>
       <span className="sqArt" style={{ background: hex(c.kart) }}>
-        {c.image ? <img src={c.image} alt="" loading="lazy" /> : null}
+        {c.image ? <CardArt src={c.image} /> : null}
       </span>
       <span className="sqMeta">
         <b>{c.tokenId ? `#${c.tokenId}` : c.name}</b>
@@ -168,4 +169,9 @@ export function Garage({ save, roster, racer, onBack, onSelect, onUpgrade }: Pro
       </div>
     </div>
   );
+}
+
+function CardArt({ src }: { src: string }) {
+  const url = useThumb(src, 192);
+  return url ? <img src={url} alt="" /> : null;
 }

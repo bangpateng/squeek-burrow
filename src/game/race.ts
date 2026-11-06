@@ -9,6 +9,7 @@ import { ambience, atDistance, drive, musicFast, sfx, stopAll } from "./audio";
 import type { ChainState } from "../core/feed";
 import { CHARACTERS, RUSH_SECONDS, TRACKS, TRACK_SCALE, ghostSpeed, type Character, type EventDef, type Look, type UpgradeId } from "./data";
 import { readInput, takePause } from "./input";
+import { loadPrefs, savePrefs } from "./prefs";
 import { BOMB_RADIUS, ITEMS, ITEM_LIST, ROLL_TIME, SHOT_SPEED, rollItem, stepBomb, stepShot, type Bomb, type ItemId, type Shot, type Trap } from "./items";
 import { DRIFT_BLUE, DRIFT_ORANGE, NO_INPUT, giveBoost, hitKart, newBrain, spawnKart, statsFor, stepKart, think, type Brain, type Input, type Kart, type Stats } from "./kart";
 import { buildAcorn, buildBomb, buildBubble, buildCheese, buildItemBox, buildKart, buildPepper, buildSeed, type KartModel } from "./models";
@@ -310,7 +311,7 @@ export class Race {
     this.path = buildPath(def.points, TRACK_SCALE);
     const high = cfg.quality === "high";
     this.renderer = new THREE.WebGLRenderer({ antialias: high, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, high ? 2 : 1));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, high ? 1.5 : 1));
     this.renderer.shadowMap.enabled = high;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -371,7 +372,7 @@ export class Race {
       const isPlayer = slot === playerSlot;
       const pool = this.cfg.rivals?.length ? this.cfg.rivals.filter((c) => c.id !== this.cfg.char.id) : null;
       const look = isPlayer ? this.cfg.char : pool ? pool[r % pool.length] : RIVALS[r % RIVALS.length];
-      const model = buildKart(look);
+      const model = buildKart(look, 1, !isPlayer);
       const bubble = buildBubble();
       model.root.add(bubble);
       this.scene.add(model.root);
@@ -499,8 +500,29 @@ export class Race {
     this.last = performance.now();
   }
 
+  // If a high-quality race runs below ~35 fps for its first seconds, drop bloom and
+  // high-DPI rendering and remember Low for next time.
+  perfSum = 0;
+  perfN = 0;
+  perfDone = false;
+  watchPerf(frameSec: number) {
+    if (this.perfDone || this.phase !== "race" || this.paused || this.cfg.autopilot) return;
+    this.perfSum += frameSec;
+    this.perfN++;
+    if (this.perfSum < 4) return;
+    this.perfDone = true;
+    if (this.perfN / this.perfSum >= 35 || !this.composer) return;
+    this.composer.dispose();
+    this.composer = null;
+    this.renderer.setPixelRatio(1);
+    this.resize();
+    savePrefs({ ...loadPrefs(), quality: "low" });
+    this.cfg.onMsg({ text: "Graphics set to Low for smoother racing", tone: "info" });
+  }
+
   loop = (now: number) => {
     this.raf = requestAnimationFrame(this.loop);
+    this.watchPerf(Math.min(0.5, Math.max(0, (now - this.last) / 1000)));
     let dt = Math.max(0, Math.min(0.05, (now - this.last) / 1000));
     this.last = now;
     if (takePause() && this.phase !== "done") this.cfg.onPause();
