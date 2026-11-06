@@ -5,6 +5,7 @@ import { regionOpen, regionStars, totalStars, type GameSave } from "../game/save
 import { fmtTime, ordinal } from "../game/race";
 import { Footer, LivePill, Seeds, Stars, TopBar } from "./Common";
 import { MapDiorama } from "./MapDiorama";
+import { WalletButton } from "./WalletButton";
 
 const KIND: Record<EventDef["kind"], string> = { race: "Grand Prix", trial: "Time trial", rush: "Seed rush", ghost: "Live duel", round: "On-chain cup" };
 const ART: Record<TrackId, string> = { wheel: "🎡", meadow: "🌻", kitchen: "🧀", burrow: "🍄" };
@@ -31,7 +32,7 @@ export function MapScreen({ save, wheel, fever, onBack, onGarage, onStart }: { s
   const t = TRACKS[region];
   return (
     <div className={`screen map theme-${region}`}>
-      <TopBar title="Adventure" onBack={onBack}>
+      <TopBar title="ADVENTURE" onBack={onBack}>
         <span className="chip">
           <Stars n={1} max={1} /> {totalStars(save)}
         </span>
@@ -41,6 +42,7 @@ export function MapScreen({ save, wheel, fever, onBack, onGarage, onStart }: { s
         <button className="ghost" onClick={onGarage}>
           Garage
         </button>
+        <WalletButton compact />
       </TopBar>
       <div className="mapBody">
         <div className="mapLeft">

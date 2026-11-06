@@ -109,6 +109,7 @@ export interface RaceConfig {
   onFinish: (r: RaceResult) => void;
   onMsg: (m: RaceMsg) => void;
   onPause: () => void;
+  rivals?: Character[]; // Squeeks from the collection; falls back to the built-in rivals
   autopilot?: boolean;
   timeScale?: number;
 }
@@ -366,7 +367,8 @@ export class Race {
       const lat = total === 1 ? 0 : (slot % 2 ? 1 : -1) * w * 0.42;
       const kart = spawnKart(this.path, idx, lat);
       const isPlayer = slot === playerSlot;
-      const look = isPlayer ? this.cfg.char : RIVALS[r % RIVALS.length];
+      const pool = this.cfg.rivals?.length ? this.cfg.rivals.filter((c) => c.id !== this.cfg.char.id) : null;
+      const look = isPlayer ? this.cfg.char : pool ? pool[r % pool.length] : RIVALS[r % RIVALS.length];
       const model = buildKart(look);
       const bubble = buildBubble();
       model.root.add(bubble);
@@ -380,8 +382,8 @@ export class Race {
         };
         this.racers.push(this.player);
       } else {
-        const rv = RIVALS[r % RIVALS.length];
-        const base = CHARACTERS[(r + 1) % CHARACTERS.length];
+        const rv = pool ? { ...pool[r % pool.length] } : RIVALS[r % RIVALS.length];
+        const base = pool ? pool[r % pool.length] : CHARACTERS[(r + 1) % CHARACTERS.length];
         const spread = [0.02, -0.01, 0.0, -0.03, -0.05][r % 5];
         this.racers.push({
           n: this.racers.length, name: rv.name, char: rv, kart, model, bubble,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { music } from "../game/audio";
-import { CHARACTERS, TRACKS, type EventDef } from "../game/data";
+import { TRACKS, type Character, type EventDef } from "../game/data";
 import { attachKeys, clearTouch, touch } from "../game/input";
 import { isTouch, type Prefs } from "../game/prefs";
 import { ITEMS, Race, fmtTime, ordinal, type Hud, type LiveData, type RaceMsg, type RaceResult } from "../game/race";
@@ -22,6 +22,8 @@ interface Props {
   event: EventDef;
   prediction: "yes" | "no" | null;
   save: GameSave;
+  racer: Character;
+  rivals: Character[];
   prefs: Prefs;
   liveRef: MutableRefObject<LiveData>;
   onFinish: (r: RaceResult) => Finished;
@@ -43,7 +45,7 @@ function Pad({ k, label, className }: { k: TouchKey; label: string; className?: 
   );
 }
 
-export function RaceView({ event, prediction, save, prefs, liveRef, onFinish, onQuit, onNext }: Props) {
+export function RaceView({ event, prediction, save, racer, rivals, prefs, liveRef, onFinish, onQuit, onNext }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
   const race = useRef<Race | null>(null);
@@ -67,7 +69,8 @@ export function RaceView({ event, prediction, save, prefs, liveRef, onFinish, on
     try {
       r = new Race(host.current!, {
         event,
-        char: CHARACTERS.find((c) => c.id === save.char) ?? CHARACTERS[0],
+        char: racer,
+        rivals,
         upgrades: save.upgrades,
         quality: prefs.quality,
         live: () => liveRef.current,

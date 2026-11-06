@@ -5,10 +5,11 @@ import { RaceView, type Finished } from "./components/RaceView";
 import { Help, Settings } from "./components/Settings";
 import { Title } from "./components/Title";
 import { music, sfx, unlockAudio } from "./game/audio";
-import { EVENTS, roundTrack, type EventDef } from "./game/data";
+import { CHARACTERS, EVENTS, roundTrack, type Character, type EventDef } from "./game/data";
 import { loadPrefs, savePrefs, type Prefs } from "./game/prefs";
 import type { LiveData, RaceResult } from "./game/race";
-import { applyResult, buyUpgrade, clearSave, loadSave, newSave, regionOpen, selectChar, unlockChar, writeSave, type GameSave } from "./game/save";
+import { applyResult, buyUpgrade, clearSave, loadSave, newSave, regionOpen, selectChar, writeSave, type GameSave } from "./game/save";
+import { useRoster } from "./web3/useRoster";
 import { useWheel } from "./hooks/useWheel";
 
 type Screen = "title" | "map" | "garage" | "settings" | "help" | "race";
@@ -24,6 +25,10 @@ export default function App() {
   const liveRef = useRef<LiveData>({ running: false, fever: false, source: "demo", rpm: 0, chain: null });
   liveRef.current = { running: wheel.running, fever, source: wheel.source, rpm: wheel.rpm, chain: wheel.chain };
   const [prediction, setPrediction] = useState<"yes" | "no" | null>(null);
+  const roster = useRoster();
+  // the chosen Squeek, else your first own Squeek, else today's first guest, else a classic hamster
+  const racer: Character =
+    (save && save.char.startsWith("sq-") ? roster.find(save.char) : undefined) ?? roster.mine[0] ?? roster.guests[0] ?? CHARACTERS[0];
 
   useEffect(() => {
     const go = () => {
@@ -83,9 +88,14 @@ export default function App() {
           save={save}
           wheel={wheel}
           fever={fever}
-          onContinue={() => nav("map")}
+          roster={roster}
+          racer={racer}
+          onPlay={() => (save ? nav("map") : startNew())}
           onNew={() => (save ? setConfirmNew(true) : startNew())}
-          onGarage={() => nav("garage", "title")}
+          onGarage={() => {
+            if (!save) setSave(newSave(Date.now()));
+            nav("garage", "title");
+          }}
           onSettings={() => nav("settings", "title")}
           onHelp={() => nav("help", "title")}
         />
@@ -109,16 +119,12 @@ export default function App() {
       {screen === "garage" && save && (
         <Garage
           save={save}
+          roster={roster}
+          racer={racer}
           onBack={() => nav(back === "garage" ? "title" : back)}
           onSelect={(id) => {
-            sfx.click();
+            sfx.unlock();
             setSave(selectChar(save, id));
-          }}
-          onUnlock={(id) => {
-            const n = unlockChar(save, id);
-            if (n === save) sfx.error();
-            else sfx.unlock();
-            setSave(n);
           }}
           onUpgrade={(id) => {
             const n = buyUpgrade(save, id);
@@ -150,6 +156,8 @@ export default function App() {
           event={event}
           prediction={prediction}
           save={save}
+          racer={racer}
+          rivals={roster.rivals}
           prefs={prefs}
           liveRef={liveRef}
           onFinish={finish}

@@ -10,7 +10,7 @@ export interface EventRecord {
 export interface GameSave {
   v: 1;
   seeds: number;
-  char: CharId;
+  char: string; // selected racer: "sq-<tokenId>" for a Squeek NFT, or a classic id
   owned: CharId[];
   upgrades: Record<UpgradeId, number>;
   records: Record<string, EventRecord>;
@@ -45,7 +45,7 @@ export function migrateSave(raw: unknown, now: number): GameSave | null {
   const ids = CHARACTERS.map((c) => c.id);
   const owned = Array.isArray(r.owned) ? r.owned.filter((c): c is CharId => ids.includes(c as CharId)) : [];
   if (!owned.includes("squeek")) owned.unshift("squeek");
-  const char = ids.includes(r.char as CharId) && owned.includes(r.char as CharId) ? (r.char as CharId) : "squeek";
+  const char = typeof r.char === "string" && (/^sq-\d{1,6}$/.test(r.char) || (ids.includes(r.char as CharId) && owned.includes(r.char as CharId))) ? r.char : "squeek";
   const upgrades = { ...base.upgrades };
   for (const k of Object.keys(upgrades) as UpgradeId[]) upgrades[k] = Math.min(MAX_UPGRADE, nat(r.upgrades?.[k]));
   const records: Record<string, EventRecord> = {};
@@ -124,8 +124,8 @@ export function unlockChar(s: GameSave, id: CharId): GameSave {
   return { ...s, seeds: s.seeds - c.cost, owned: [...s.owned, id], char: id };
 }
 
-export function selectChar(s: GameSave, id: CharId): GameSave {
-  return s.owned.includes(id) ? { ...s, char: id } : s;
+export function selectChar(s: GameSave, id: string): GameSave {
+  return /^sq-\d{1,6}$/.test(id) || s.owned.includes(id as CharId) ? { ...s, char: id } : s;
 }
 
 export function canUpgrade(s: GameSave, id: UpgradeId): boolean {

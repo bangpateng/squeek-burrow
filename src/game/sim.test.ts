@@ -62,6 +62,8 @@ assert.equal(s.upgrades.engine, 1);
 const m = migrateSave(JSON.parse(JSON.stringify(s)), 2)!;
 assert.deepEqual(m, s);
 assert.equal(migrateSave({ v: 1, char: "ghost", owned: ["ghost"], seeds: -5, upgrades: { engine: 99 } }, 2)!.char, "squeek");
+assert.equal(migrateSave({ v: 1, char: "sq-381" }, 2)!.char, "sq-381");
+assert.equal(migrateSave({ v: 1, char: "sq-x" }, 2)!.char, "squeek");
 assert.equal(migrateSave({ v: 1, upgrades: { engine: 99 } }, 2)!.upgrades.engine, 4);
 assert.equal(migrateSave(null, 1), null);
 assert.equal(EVENTS.length, 11);

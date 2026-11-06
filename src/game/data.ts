@@ -6,7 +6,7 @@ export type EventKind = "race" | "trial" | "rush" | "ghost" | "round";
 export type UpgradeId = "engine" | "tires" | "turbo";
 
 export interface Character {
-  id: CharId;
+  id: string; // a classic id, or "sq-<tokenId>" for a Genesis Squeek
   name: string;
   blurb: string;
   fur: number; // body colour
@@ -16,6 +16,10 @@ export interface Character {
   accel: number;
   handling: number;
   cost: number; // seeds to unlock, 0 = free
+  tokenId?: number;
+  image?: string; // the NFT's own on-chain art (data URI)
+  source?: "wallet" | "staked" | "guest" | "classic";
+  traits?: { trait_type: string; value: string | number }[];
 }
 
 export const CHARACTERS: Character[] = [

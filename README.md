@@ -17,10 +17,23 @@ The game polls the public `GET /v1/status` endpoint every 3 seconds (`src/core/f
 
 Set `VITE_SQUEEK_API_URL=https://api.squeekchain.com` at build time. Without it the game uses a clearly labelled demo wheel.
 
+## Genesis Squeek NFT racers
+
+Every racer is a Genesis Squeek NFT from the Sepolia collection (`0xc4c7...856b`).
+
+- **Connect wallet**: a standard RainbowKit button with MetaMask, OKX, Rabby, Coinbase, Phantom, Trust, Rainbow and WalletConnect (QR on desktop, deep links on phones).
+- **Read only**: the game only reads your address. It never asks for a signature, a transaction or an approval.
+- **My Squeeks**: the Garage finds Squeeks in your wallet and Squeeks you have staked (they keep earning while you race). Pick one and race with it.
+- **Today's guests**: players without a Squeek get 6 random Squeeks from the collection, changing every day.
+- **Rivals**: the AI rivals are random Squeeks from the collection.
+- **Art and stats from the chain**: each card shows the on-chain SVG from `tokenURI`. The 3D hamster and kart take their colours from that SVG, and the traits decide speed, acceleration and handling.
+- Reads go through public Sepolia RPCs (publicnode, drpc, 1rpc) with failover and are cached in the browser.
+
+Set `VITE_WALLETCONNECT_PROJECT_ID` (free at dashboard.reown.com) to show the full wallet list. Without it only browser wallets and Coinbase are shown.
+
 ## The game
 
 - **3D adventure map**: an island with four regions. Squeek's Wheel (Race the Hamster and Round Cup) is always open; Sunflower Meadow, Kitchen Counter and The Deep Burrow each have a Grand Prix against 5 AI rivals, a time trial and a 90-second seed rush. Stars open the later regions (4 and 10 stars).
-- **4 hamsters** with different speed, acceleration and handling, modelled as round, fluffy racers with goggles. Unlock them with seeds.
 - **Garage upgrades**: engine, tyres and turbo tank, 4 levels each.
 - **Item boxes and weapons** (Grand Prix only): acorn shot that bounces off walls, homing cheese, pepper trap, seed bomb with an explosion radius, bubble shield and cheek rocket. Racers at the back get stronger items, and the AI rivals use items against you and each other. Hits spin you out; shields block one hit.
 - **Modern look**: glossy karts with studio reflections, bloom lighting on the High setting, gradient skies, live standings, and a 3D podium with confetti on the results screen.
