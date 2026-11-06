@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { sfx } from "../game/audio";
 import { useAccount } from "wagmi";
 import { CHARACTERS, type Character } from "../game/data";
 import { findOwned, getMeta, lastRpcError, randomSqueeks } from "./reader";
@@ -47,6 +48,12 @@ export function useRoster(): Roster {
   const [pool, setPool] = useState<Character[]>([]);
   const [poolStatus, setPoolStatus] = useState<RosterStatus>("loading");
   const [tick, setTick] = useState(0);
+  // a chime when a wallet connects, and a little run of notes when its Squeeks are found
+  const wasConnected = useRef(isConnected);
+  useEffect(() => {
+    if (isConnected && !wasConnected.current) sfx.walletConnected();
+    wasConnected.current = isConnected;
+  }, [isConnected]);
 
   useEffect(() => {
     let live = true;
@@ -84,6 +91,7 @@ export function useRoster(): Roster {
             .map((m) => racerFromMeta(m, own.staked.includes(m.id) ? "staked" : "wallet")),
         );
         setMineStatus("ready");
+        if (ids.length) sfx.squeeksFound(ids.length);
       })
       .catch((e) => {
         if (!live) return;

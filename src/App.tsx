@@ -4,7 +4,7 @@ import { MapScreen } from "./components/MapScreen";
 import { RaceView, type Finished } from "./components/RaceView";
 import { Help, Settings } from "./components/Settings";
 import { Title } from "./components/Title";
-import { music, sfx, unlockAudio } from "./game/audio";
+import { music, sfx, unlockAudio, type SongName } from "./game/audio";
 import { CHARACTERS, EVENTS, roundTrack, type Character, type EventDef } from "./game/data";
 import { loadPrefs, savePrefs, type Prefs } from "./game/prefs";
 import type { LiveData, RaceResult } from "./game/race";
@@ -30,16 +30,44 @@ export default function App() {
   const racer: Character =
     (save && save.char.startsWith("sq-") ? roster.find(save.char) : undefined) ?? roster.mine[0] ?? roster.guests[0] ?? CHARACTERS[0];
 
+  // each screen has its own song; the race screen plays its track's song itself
+  const songFor = (s: Screen): SongName | null => (s === "title" || s === "settings" || s === "help" ? "title" : s === "map" ? "map" : s === "garage" ? "garage" : null);
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+  useEffect(() => {
+    const name = songFor(screen);
+    if (name) music(name);
+  }, [screen]);
+
   useEffect(() => {
     const go = () => {
       unlockAudio();
-      music("menu");
+      const name = songFor(screenRef.current);
+      if (name) music(name);
+    };
+    // every button clicks, Back buttons click lower, and buttons tick softly under a mouse
+    const click = (e: MouseEvent) => {
+      const b = (e.target as HTMLElement | null)?.closest?.("button, a");
+      if (!b || (b as HTMLButtonElement).disabled) return;
+      if (/^\W*back\b/i.test(b.textContent ?? "") || b.getAttribute("aria-label") === "Back") sfx.back();
+      else sfx.click();
+    };
+    let lastHover: Element | null = null;
+    const hover = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
+      const b = (e.target as HTMLElement | null)?.closest?.("button");
+      if (b && b !== lastHover && !(b as HTMLButtonElement).disabled) sfx.hover();
+      lastHover = b ?? null;
     };
     window.addEventListener("pointerdown", go);
     window.addEventListener("keydown", go);
+    window.addEventListener("click", click, true);
+    window.addEventListener("pointerover", hover);
     return () => {
       window.removeEventListener("pointerdown", go);
       window.removeEventListener("keydown", go);
+      window.removeEventListener("click", click, true);
+      window.removeEventListener("pointerover", hover);
     };
   }, []);
 
@@ -50,7 +78,6 @@ export default function App() {
   }, []);
 
   const nav = (s: Screen, from?: Screen) => {
-    sfx.click();
     if (from) setBack(from);
     setScreen(s);
   };

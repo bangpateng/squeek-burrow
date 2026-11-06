@@ -340,6 +340,7 @@ button.primary.alt { background: #8a6bff; color: #fff; box-shadow: 0 5px 0 #4a35
 .standings li b { width: 16px; text-align: right; font-family: var(--display); color: var(--seed); }
 .standings li i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid rgba(0, 0, 0, 0.6); }
 .standings li.you { background: rgba(255, 200, 61, 0.3); }
+.standings li .thumb { width: 22px; height: 22px; border-radius: 6px; background: #08070c; border: 1px solid rgba(255, 255, 255, 0.25); flex: none; }
 .podiumWrap { width: 100%; display: grid; gap: 4px; }
 .podium { width: 100%; height: 190px; border-radius: 16px; background: radial-gradient(120% 100% at 50% 0%, #4a333a, #2a1a1e); overflow: hidden; }
 .podium canvas { display: block; width: 100%; height: 100%; }

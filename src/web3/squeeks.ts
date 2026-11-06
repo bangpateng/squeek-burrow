@@ -126,6 +126,8 @@ export interface SqueekLook {
   fur: number;
   belly: number;
   kart: number;
+  palette: number[]; // the NFT's own colours, most used first
+  glyph: string; // body glyph shape from the traits, e.g. "Triangle"
   speed: number;
   accel: number;
   handling: number;
@@ -154,7 +156,17 @@ export function lookFromMeta(meta: SqueekMeta): SqueekLook {
   const belly = hslToRgb(m.h, 0.45, 0.92);
   const k = rgbToHsl(second);
   const kart = hslToRgb(k.h, Math.max(0.65, k.s), Math.min(0.6, Math.max(0.45, k.l)));
-  return { fur, belly, kart, ...statsFromTraits(meta.id, meta.attributes) };
+  const palette = colors.slice(0, 6);
+  while (palette.length < 3) palette.push(palette.length === 0 ? main : second);
+  return { fur, belly, kart, palette, glyph: bodyGlyph(meta), ...statsFromTraits(meta.id, meta.attributes) };
+}
+
+// The body glyph decides the dot shape on the 3D hamster. It is a trait, and also written in the SVG's <desc>.
+export function bodyGlyph(meta: SqueekMeta): string {
+  const a = meta.attributes.find((x) => /body\s*glyph/i.test(x.trait_type));
+  if (a) return String(a.value);
+  const m = svgText(meta.image).match(/Body Glyph:\s*([^;<]+)/i);
+  return m ? m[1].trim() : "Circle";
 }
 
 export function trait(meta: SqueekMeta, type: string): string | null {
@@ -269,5 +281,68 @@ export function parseTransfer(l: RawLog): TransferLog | null {
     block: parseInt(l.blockNumber, 16),
     index: parseInt(l.logIndex, 16),
     tx: lc(l.transactionHash),
+  };
+}
+
+// ---------- the dot grid inside a Genesis Squeek SVG ----------
+// The art is a 25088-unit square: glyph paths in <defs>, then groups like <g color="#FF8712">
+// holding <use href="#A" x=".." y=".."/> dots. Faint background dots carry opacity < 0.4.
+
+export interface SqueekDot {
+  x: number; // -0.5..0.5 across the art, centred
+  y: number; // 0 at the bottom of the figure, up is positive, in the same units as x
+  color: number;
+  glyph: string; // id of the glyph path
+  size: number; // glyph radius in the same units
+}
+
+export interface SqueekDots {
+  glyphs: Record<string, string>; // id -> path d, in glyph units (multiply by scale)
+  scale: number; // glyph units -> art units (the SVG uses scale(16)), already divided by the art size
+  dots: SqueekDot[];
+  step: number; // grid spacing between dots, same units as x
+}
+
+export function parseSqueekDots(svg: string): SqueekDots | null {
+  const vb = svg.match(/viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/);
+  const size = vb ? Number(vb[1]) : 25088;
+  const glyphs: Record<string, string> = {};
+  const extent: Record<string, number> = {};
+  let unit = 16;
+  for (const m of svg.matchAll(/<path id="([A-Za-z0-9_-]+)" d="([^"]+)"([^>]*)\/?>/g)) {
+    glyphs[m[1]] = m[2];
+    const nums = (m[2].match(/-?\d*\.?\d+/g) ?? []).map(Number);
+    extent[m[1]] = nums.length ? Math.max(...nums.map(Math.abs)) : 1;
+    const sc = m[3].match(/scale\(([\d.]+)\)/);
+    if (sc) unit = Number(sc[1]);
+  }
+  const dots: SqueekDot[] = [];
+  const groupRe = /<g color="(#[0-9A-Fa-f]{6})">([\s\S]*?)<\/g>/g;
+  for (const g of svg.matchAll(groupRe)) {
+    const color = parseInt(g[1].slice(1), 16);
+    for (const u of g[2].matchAll(/<use href="#([A-Za-z0-9_-]+)" x="(-?[\d.]+)" y="(-?[\d.]+)"(?: opacity="([\d.]+)")?\s*\/>/g)) {
+      if (u[4] !== undefined && Number(u[4]) < 0.4) continue; // faint background grid
+      if (!glyphs[u[1]]) continue;
+      dots.push({ x: Number(u[2]), y: Number(u[3]), color, glyph: u[1], size: extent[u[1]] * unit });
+    }
+  }
+  if (dots.length < 40) return null;
+  // the grid step: the most common small gap between neighbouring x values
+  const xs = [...new Set(dots.map((d) => Math.round(d.x)))].sort((a, b) => a - b);
+  const gaps = new Map<number, number>();
+  for (let i = 1; i < xs.length; i++) {
+    const gp = xs[i] - xs[i - 1];
+    if (gp > 50) gaps.set(gp, (gaps.get(gp) ?? 0) + 1);
+  }
+  const step = [...gaps.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 395;
+  const maxY = Math.max(...dots.map((d) => d.y));
+  const minX = Math.min(...dots.map((d) => d.x));
+  const maxX = Math.max(...dots.map((d) => d.x));
+  const cx = (minX + maxX) / 2;
+  return {
+    glyphs,
+    scale: unit / size,
+    step: step / size,
+    dots: dots.map((d) => ({ ...d, x: (d.x - cx) / size, y: (maxY - d.y) / size, size: d.size / size })),
   };
 }

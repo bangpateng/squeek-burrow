@@ -20,7 +20,12 @@ export interface Character {
   image?: string; // the NFT's own on-chain art (data URI)
   source?: "wallet" | "staked" | "guest" | "classic";
   traits?: { trait_type: string; value: string | number }[];
+  palette?: number[]; // NFT colours for the glowing dot fur
+  glyph?: string; // NFT body glyph, the shape of the dots
 }
+
+// What the 3D builders need to draw a racer.
+export type Look = Pick<Character, "fur" | "belly" | "kart" | "palette" | "glyph" | "image" | "tokenId">;
 
 export const CHARACTERS: Character[] = [
   { id: "squeek", name: "Squeek", blurb: "The wheel champion. Good at everything.", fur: 0xe8a65a, belly: 0xfff0d4, kart: 0xe2463f, speed: 3, accel: 3, handling: 3, cost: 0 },

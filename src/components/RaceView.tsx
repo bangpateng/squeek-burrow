@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { music } from "../game/audio";
 import { TRACKS, type Character, type EventDef } from "../game/data";
 import { attachKeys, clearTouch, touch } from "../game/input";
@@ -53,6 +53,10 @@ export function RaceView({ event, prediction, save, racer, rivals, prefs, liveRe
   const [msg, setMsg] = useState<(RaceMsg & { id: number }) | null>(null);
   const [paused, setPaused] = useState(false);
   const [done, setDone] = useState<Finished | null>(null);
+  // victory loop on the results screen, the track's song again on a restart
+  useEffect(() => {
+    if (done) music("results");
+  }, [done]);
   const [run, setRun] = useState(0); // bump to restart
   const [error, setError] = useState(false);
   const finishRef = useRef(onFinish);
@@ -100,7 +104,6 @@ export function RaceView({ event, prediction, save, racer, rivals, prefs, liveRe
       clearTouch();
       r.dispose();
       race.current = null;
-      music("menu");
     };
     // the save is read once at the start of each run
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -162,8 +165,8 @@ export function RaceView({ event, prediction, save, racer, rivals, prefs, liveRe
               {h.standings.map((r, i) => (
                 <li key={r.name} className={r.player ? "you" : ""}>
                   <b>{i + 1}</b>
-                  <i style={{ background: r.color }} />
-                  {r.player ? "You" : r.name}
+                  {r.image ? <Thumb src={r.image} /> : <i style={{ background: r.color }} />}
+                  {r.player ? "You" : r.tokenId ? `#${r.tokenId}` : r.name}
                 </li>
               ))}
             </ol>
@@ -333,3 +336,8 @@ export function RaceView({ event, prediction, save, racer, rivals, prefs, liveRe
     </div>
   );
 }
+
+// Small NFT portrait in the standings. Memoised so the big SVG is decoded once.
+const Thumb = memo(function Thumb({ src }: { src: string }) {
+  return <img className="thumb" src={src} alt="" />;
+});

@@ -5,9 +5,9 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { ambience, drive, musicFast, sfx, stopAll } from "./audio";
+import { ambience, atDistance, drive, musicFast, sfx, stopAll } from "./audio";
 import type { ChainState } from "../core/feed";
-import { CHARACTERS, RUSH_SECONDS, TRACKS, TRACK_SCALE, ghostSpeed, type Character, type EventDef, type UpgradeId } from "./data";
+import { CHARACTERS, RUSH_SECONDS, TRACKS, TRACK_SCALE, ghostSpeed, type Character, type EventDef, type Look, type UpgradeId } from "./data";
 import { readInput, takePause } from "./input";
 import { BOMB_RADIUS, ITEMS, ITEM_LIST, ROLL_TIME, SHOT_SPEED, rollItem, stepBomb, stepShot, type Bomb, type ItemId, type Shot, type Trap } from "./items";
 import { DRIFT_BLUE, DRIFT_ORANGE, NO_INPUT, giveBoost, hitKart, newBrain, spawnKart, statsFor, stepKart, think, type Brain, type Input, type Kart, type Stats } from "./kart";
@@ -18,7 +18,7 @@ import { buildWorld, type World } from "./world";
 export interface Racer {
   n: number;
   name: string;
-  char: Pick<Character, "fur" | "belly" | "kart">;
+  char: Look;
   kart: Kart;
   stats: Stats;
   model: KartModel;
@@ -60,12 +60,12 @@ export interface Hud {
   chain: ChainState | null;
   pick: "yes" | "no" | null;
   startHeight: number | null;
-  standings: { name: string; color: string; player: boolean }[];
+  standings: { name: string; color: string; player: boolean; image?: string; tokenId?: number }[];
 }
 
 export interface PodiumEntry {
   name: string;
-  look: { fur: number; belly: number; kart: number };
+  look: Look;
   player: boolean;
 }
 
@@ -258,6 +258,8 @@ export class Race {
   phase: Hud["phase"] = "intro";
   clock = 0;
   raceTime = 0;
+  beepT = 0;
+  fuseT = 0;
   countdown = 3;
   paused = false;
   finishOrder: Racer[] = [];
@@ -520,6 +522,12 @@ export class Race {
     this.drawMap();
   };
 
+  // play a sound made by racer r: full volume for the player, quieter with distance for rivals
+  heard(r: Racer, fn: () => void) {
+    if (r.player) fn();
+    else atDistance(this.distToPlayer(r.kart.x, r.kart.z), fn);
+  }
+
   near(x: number, z: number, r = 70): boolean {
     const p = this.player.kart;
     return (p.x - x) ** 2 + (p.z - z) ** 2 < r * r;
@@ -563,6 +571,7 @@ export class Race {
         this.lapStart = 0;
         this.lastPlace = this.placeOf(this.player);
         sfx.go();
+        sfx.cheer();
       }
       return;
     }
@@ -693,7 +702,7 @@ export class Race {
         ghostWon,
         ghostAvg,
         prediction: this.predictionResult(),
-        podium: this.order().slice(0, 3).map((r) => ({ name: r.name, look: { fur: r.char.fur, belly: r.char.belly, kart: r.char.kart }, player: r.player })),
+        podium: this.order().slice(0, 3).map((r) => ({ name: r.name, look: { fur: r.char.fur, belly: r.char.belly, kart: r.char.kart, palette: r.char.palette, glyph: r.char.glyph, image: r.char.image, tokenId: r.char.tokenId }, player: r.player })),
       };
       this.cfg.onFinish(this.result);
     }
@@ -751,7 +760,6 @@ export class Race {
     const fx = Math.sin(k.heading);
     const fz = Math.cos(k.heading);
     const dir = back ? -1 : 1;
-    const loud = r.player || this.near(k.x, k.z, 50);
     switch (item) {
       case "acorn":
       case "cheese": {
@@ -765,7 +773,7 @@ export class Race {
         obj.position.set(s.x, 0.8, s.z);
         this.scene.add(obj);
         this.shots.push(s);
-        if (loud) item === "acorn" ? sfx.shoot() : sfx.homing();
+        this.heard(r, () => (item === "acorn" ? sfx.shoot() : sfx.homing()));
         if (item === "cheese" && target === this.player.n && !r.player) this.cfg.onMsg({ text: "Homing cheese behind you!", tone: "warn" });
         break;
       }
@@ -777,7 +785,7 @@ export class Race {
         obj.rotation.y = Math.random() * 6;
         this.scene.add(obj);
         this.traps.push({ x, z, life: 25, owner: r.n, safe: 0.8, obj });
-        if (loud) sfx.trap();
+        this.heard(r, () => sfx.trap());
         break;
       }
       case "bomb": {
@@ -788,18 +796,18 @@ export class Race {
         obj.position.set(b.x, b.y, b.z);
         this.scene.add(obj);
         this.bombs.push(b);
-        if (loud) sfx.throwBomb();
+        this.heard(r, () => sfx.throwBomb());
         break;
       }
       case "shield":
         k.shield = 10;
-        if (loud) sfx.shieldUp();
+        this.heard(r, () => sfx.shieldUp());
         this.fx.burst(k.x, 1, k.z, 20, 4, 4, C_BUBBLE, 0.5, 2);
         break;
       case "dash":
         giveBoost(k, "dash", 1.8, 1.5);
         k.spin = 0;
-        if (loud) sfx.boost("dash");
+        this.heard(r, () => sfx.boost("dash"));
         this.fire.burst(k.x - fx * 2.6, 0.6, k.z - fz * 2.6, 10, 5, 1.5, C_FIRE[1], 0.3, 0);
         break;
     }
@@ -847,7 +855,9 @@ export class Race {
       return false;
     }
     this.fx.burst(k.x, 1.8, k.z, 12, 3, 4, C_STAR, 0.6, 3);
+    if (!victim.player && !attacker?.player) atDistance(this.distToPlayer(k.x, k.z), () => sfx.thud());
     if (victim.player) {
+      sfx.impact();
       sfx.spinout();
       this.shake = Math.max(this.shake, 0.7);
       this.hitAgo = 0;
@@ -885,6 +895,21 @@ export class Race {
   }
 
   stepWeapons(dt: number) {
+    // warning beeps while homing cheese chases the player, faster as it closes in
+    this.beepT -= dt;
+    let closest = Infinity;
+    for (const s of this.shots) if (s.kind === "cheese" && s.target === this.player.n) closest = Math.min(closest, Math.hypot(s.x - this.player.kart.x, s.z - this.player.kart.z));
+    if (closest < 60 && this.beepT <= 0) {
+      const c = 1 - closest / 60;
+      sfx.lockOn(c);
+      this.beepT = 0.35 - c * 0.27;
+    }
+    // bomb fuses fizz when close
+    this.fuseT -= dt;
+    if (this.fuseT <= 0 && this.bombs.length) {
+      this.fuseT = 0.12;
+      for (const b of this.bombs) atDistance(this.distToPlayer(b.x, b.z) * 2, () => sfx.fuse());
+    }
     // shots
     for (const s of this.shots) {
       const tgt = s.target >= 0 ? this.racers[s.target].kart : null;
@@ -922,6 +947,7 @@ export class Race {
         if (A.life > 0 && B.life > 0 && (A.x - B.x) ** 2 + (A.z - B.z) ** 2 < 2.5) {
           A.life = B.life = 0;
           this.fx.burst(A.x, 0.8, A.z, 16, 6, 4, C_SPARK, 0.4);
+          atDistance(this.distToPlayer(A.x, A.z), () => sfx.shotClash());
         }
       }
     this.shots = this.shots.filter((s) => {
@@ -937,6 +963,8 @@ export class Race {
       for (const r of this.racers) {
         if (r.n === t.owner && t.safe > 0) continue;
         if ((r.kart.x - t.x) ** 2 + (r.kart.z - t.z) ** 2 > 3.2) continue;
+        if (r.player) sfx.trapHit();
+        else atDistance(this.distToPlayer(t.x, t.z), () => sfx.trapHit());
         this.hit(r, 1.0, t.owner, "a pepper trap");
         this.fire.burst(t.x, 0.6, t.z, 20, 4, 4, C_FIRE[2], 0.4, 2);
         t.life = 0;
@@ -1312,7 +1340,7 @@ export class Race {
       chain: lv0.chain,
       pick: this.cfg.prediction ?? null,
       startHeight: this.chainStart?.height ?? null,
-      standings: this.racers.length > 1 ? this.order().map((r) => ({ name: r.name, color: r.color, player: r.player })) : [],
+      standings: this.racers.length > 1 ? this.order().map((r) => ({ name: r.name, color: r.color, player: r.player, image: r.char.image, tokenId: r.char.tokenId })) : [],
     };
   }
 

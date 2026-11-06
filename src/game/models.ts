@@ -1,7 +1,8 @@
 // Low-poly models built from primitives. No external model files.
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import type { Character } from "./data";
+import type { Look } from "./data";
+import { buildDotFigure, dotsFor } from "./dotFigure";
 
 const mats = new Map<string, THREE.MeshStandardMaterial>();
 export function mat(color: number, opts: { emissive?: number; rough?: number; metal?: number } = {}): THREE.MeshStandardMaterial {
@@ -52,13 +53,111 @@ export function soft(color: number, opts: { rough?: number; metal?: number; emis
 
 const ball = (r: number) => new THREE.SphereGeometry(r, 24, 18);
 
+// ---------- Genesis Squeek look: glowing dots on dark fur, like the on-chain dot-grid art ----------
+
+const hexCss = (n: number) => "#" + n.toString(16).padStart(6, "0");
+const mix = (a: number, b: number, t: number) => {
+  const ch = (s: number) => Math.round(((a >> s) & 255) * (1 - t) + ((b >> s) & 255) * t);
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+};
+
+function glyphPath(c: CanvasRenderingContext2D, glyph: string, x: number, y: number, r: number) {
+  const g = glyph.toLowerCase();
+  c.beginPath();
+  if (g.includes("triangle")) {
+    c.moveTo(x, y - r);
+    c.lineTo(x + r * 0.95, y + r * 0.75);
+    c.lineTo(x - r * 0.95, y + r * 0.75);
+  } else if (g.includes("square") || g.includes("capsule")) {
+    const k = r * 0.85;
+    if (c.roundRect) c.roundRect(x - k, y - k, k * 2, k * 2, g.includes("rounded") || g.includes("capsule") ? k * 0.45 : 0);
+    else c.rect(x - k, y - k, k * 2, k * 2);
+  } else if (g.includes("sparkle") || g.includes("star") || g.includes("diamond") || g.includes("bolt") || g.includes("lightning")) {
+    const k = r * 0.32;
+    c.moveTo(x, y - r);
+    c.lineTo(x + k, y - k);
+    c.lineTo(x + r, y);
+    c.lineTo(x + k, y + k);
+    c.lineTo(x, y + r);
+    c.lineTo(x - k, y + k);
+    c.lineTo(x - r, y);
+    c.lineTo(x - k, y - k);
+  } else {
+    c.arc(x, y, r, 0, Math.PI * 2);
+  }
+  c.closePath();
+  c.fill();
+}
+
+const dotMats = new Map<string, THREE.MeshStandardMaterial>();
+// A sphere-wrapped dot grid in the NFT's palette. Light = the paler muzzle and belly version.
+function dotMaterial(palette: number[], glyph: string, seed: number, light: boolean): THREE.MeshStandardMaterial {
+  const key = `${palette.join(",")}-${glyph}-${seed}-${light}`;
+  let m = dotMats.get(key);
+  if (m) return m;
+  let s = (seed * 2654435761) >>> 0 || 7;
+  const rnd = () => {
+    s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+    return s / 4294967296;
+  };
+  const tex = canvasTexture(512, 256, (c) => {
+    c.fillStyle = light ? "#2a2633" : "#15131c";
+    c.fillRect(0, 0, 512, 256);
+    const step = light ? 11 : 13;
+    for (let y = step / 2; y < 256; y += step) {
+      for (let x = step / 2; x < 512; x += step) {
+        const n = rnd();
+        if (n < (light ? 0.12 : 0.22)) continue;
+        const col = palette[Math.floor(rnd() * palette.length)];
+        c.fillStyle = hexCss(light ? mix(col, 0xffffff, 0.45) : col);
+        glyphPath(c, glyph, x, y, (light ? 1.6 : 1.4) + n * (step * 0.36));
+      }
+    }
+  });
+  m = new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.55, roughness: 0.75 });
+  dotMats.set(key, m);
+  return m;
+}
+
+// The NFT's own art as a texture, drawn once per token.
+const artTex = new Map<string, THREE.CanvasTexture>();
+export function nftTexture(image: string, key: string): THREE.CanvasTexture {
+  let t = artTex.get(key);
+  if (t) return t;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = 256;
+  const ctx = cv.getContext("2d")!;
+  ctx.fillStyle = "#08070c";
+  ctx.fillRect(0, 0, 256, 256);
+  t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const img = new Image();
+  img.onload = () => {
+    ctx.drawImage(img, 0, 0, 256, 256);
+    t!.needsUpdate = true;
+  };
+  img.src = image;
+  artTex.set(key, t);
+  return t;
+}
+
 // A round, fluffy hamster facing +z, sitting with its base at y = 0.
-export function buildHamster(c: Pick<Character, "fur" | "belly" | "kart">): THREE.Group {
+// Genesis Squeeks (with a palette) get the dark fur with glowing glyph dots from their NFT art.
+export function buildHamster(c: Look): THREE.Group {
+  // a Genesis Squeek with readable art: rebuild the NFT itself in 3D
+  const dots = dotsFor(c.image, String(c.tokenId ?? c.image?.length ?? 0));
+  if (dots) {
+    const fig = buildDotFigure(dots, 1.9);
+    fig.userData.nftFigure = true;
+    return fig;
+  }
   const g = new THREE.Group();
-  const fur = soft(c.fur, { rough: 0.85 });
-  const cream = soft(c.belly, { rough: 0.9 });
-  const pink = soft(0xf7a3b5, { rough: 0.5 });
-  const eyeMat = soft(0x120c0e, { rough: 0.15, metal: 0.2 });
+  const nft = !!c.palette?.length;
+  const seed = c.tokenId ?? 1;
+  const fur = nft ? dotMaterial(c.palette!, c.glyph ?? "Circle", seed, false) : soft(c.fur, { rough: 0.85 });
+  const cream = nft ? dotMaterial(c.palette!, c.glyph ?? "Circle", seed + 1, true) : soft(c.belly, { rough: 0.9 });
+  const pink = nft ? soft(mix(c.palette![0], 0xffffff, 0.35), { rough: 0.5, emissive: mix(c.palette![0], 0x000000, 0.35) }) : soft(0xf7a3b5, { rough: 0.5 });
+  const eyeMat = nft ? soft(0xf5f2ea, { rough: 0.3, emissive: 0xd8d4cc }) : soft(0x120c0e, { rough: 0.15, metal: 0.2 });
   const white = soft(0xffffff, { rough: 0.2 });
   const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, sx = 1, sy = sx, sz = sx, shadow = true) => {
     const o = new THREE.Mesh(geo, m);
@@ -123,7 +222,7 @@ export interface KartModel {
   driver: THREE.Group;
 }
 
-export function buildKart(c: Pick<Character, "fur" | "belly" | "kart">, scale = 1): KartModel {
+export function buildKart(c: Look, scale = 1): KartModel {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
@@ -166,8 +265,18 @@ export function buildKart(c: Pick<Character, "fur" | "belly" | "kart">, scale = 
     pipe.rotation.x = Math.PI / 2;
   }
   // number roundel on the nose
-  const num = add(new THREE.CircleGeometry(0.16, 20), soft(0xffffff, { rough: 0.4 }), 0, 0.61, 1.45);
+  const art = c.image ? new THREE.MeshBasicMaterial({ map: nftTexture(c.image, String(c.tokenId ?? c.image.length)) }) : null;
+  const num = add(new THREE.CircleGeometry(art ? 0.24 : 0.16, 24), art ?? soft(0xffffff, { rough: 0.4 }), 0, 0.61, 1.45);
   num.rotation.x = -Math.PI / 2 + 0.08;
+  if (art) {
+    // the NFT art on the back of the seat, where the chase camera sees it
+    const plate = add(new THREE.PlaneGeometry(0.7, 0.7), art, 0, 0.88, -1.025);
+    plate.rotation.y = Math.PI;
+    plate.castShadow = false;
+    const frame = add(new THREE.PlaneGeometry(0.78, 0.78), soft(c.kart, { rough: 0.4 }), 0, 0.88, -1.022);
+    frame.rotation.y = Math.PI;
+    frame.castShadow = false;
+  }
 
   const flames: THREE.Mesh[] = [];
   for (const s of [-1, 1]) {
@@ -180,7 +289,7 @@ export function buildKart(c: Pick<Character, "fur" | "belly" | "kart">, scale = 
   }
 
   const driver = buildHamster(c);
-  driver.position.set(0, 0.42, -0.4);
+  driver.position.set(0, driver.userData.nftFigure ? 0.1 : 0.42, -0.4);
   driver.scale.setScalar(0.92);
   body.add(driver);
 

@@ -105,8 +105,22 @@ export function unlockAudio() {
   }
 }
 
+// Volume multiplier for effects, so things far from the player sound far away.
+let fxMul = 1;
+export function atDistance(d: number, fn: () => void) {
+  const v = Math.max(0, 1 - d / 80);
+  if (v < 0.05) return;
+  fxMul = v * v;
+  try {
+    fn();
+  } finally {
+    fxMul = 1;
+  }
+}
+
 function tone(freq: number, dur: number, type: OscillatorType, vol: number, delay = 0, slideTo?: number, bus?: AudioNode | null) {
   if (!ctx) return;
+  if (!bus) vol *= fxMul;
   const out = bus ?? fxBus;
   if (!out) return;
   const t = ctx.currentTime + delay;
@@ -126,6 +140,7 @@ function tone(freq: number, dur: number, type: OscillatorType, vol: number, dela
 
 function noise(dur: number, vol: number, freq: number, delay = 0, type: BiquadFilterType = "bandpass", sweepTo?: number, bus?: AudioNode | null, q = 1) {
   if (!ctx || !noiseBuf) return;
+  if (!bus) vol *= fxMul;
   const out = bus ?? fxBus;
   if (!out) return;
   const t = ctx.currentTime + delay;
@@ -287,6 +302,60 @@ export const sfx = {
   },
   hitOther() {
     if (on()) [660, 880, 1320].forEach((f, i) => tone(f, 0.09, "square", 0.07, i * 0.05));
+  },
+  hover() {
+    if (on()) tone(1400, 0.025, "sine", 0.025);
+  },
+  back() {
+    if (on()) tone(620, 0.05, "square", 0.05), tone(420, 0.07, "square", 0.04, 0.03);
+  },
+  toggle(onState: boolean) {
+    if (on()) tone(onState ? 880 : 520, 0.06, "triangle", 0.08), tone(onState ? 1320 : 390, 0.07, "triangle", 0.06, 0.04);
+  },
+  walletConnected() {
+    if (!on()) return;
+    [659, 988, 1319].forEach((f, i) => tone(f, 0.18, "sine", 0.1, i * 0.07));
+    noise(0.3, 0.04, 9000, 0.15, "highpass");
+  },
+  squeeksFound(n: number) {
+    if (!on()) return;
+    for (let i = 0; i < Math.min(n, 6); i++) tone(784 * Math.pow(2, (i * 2) / 12), 0.12, "triangle", 0.08, i * 0.07);
+  },
+  // the player is hit: a heavy thud and a crunch under the spin-out
+  impact() {
+    if (!on()) return;
+    tone(80, 0.35, "sine", 0.4, 0, 35);
+    noise(0.25, 0.35, 700, 0, "lowpass", 120);
+    noise(0.1, 0.2, 4000, 0, "bandpass");
+  },
+  // somebody else gets hit nearby
+  thud() {
+    if (!on()) return;
+    tone(120, 0.18, "sine", 0.25, 0, 50);
+    noise(0.15, 0.2, 1400, 0, "bandpass", 300);
+  },
+  // homing cheese closing in on you: faster and higher as it gets near
+  lockOn(closeness: number) {
+    if (on()) tone(900 + closeness * 900, 0.05, "square", 0.05 + closeness * 0.05);
+  },
+  fuse() {
+    if (on()) noise(0.05, 0.06, 6000, 0, "highpass");
+  },
+  trapHit() {
+    if (!on()) return;
+    noise(0.5, 0.25, 2200, 0, "highpass", 6000); // sizzle
+    tone(240, 0.2, "sawtooth", 0.06, 0, 120);
+  },
+  shotClash() {
+    if (on()) tone(1800, 0.08, "square", 0.06, 0, 700), noise(0.08, 0.12, 5000);
+  },
+  cheer() {
+    if (!on()) return;
+    noise(1.6, 0.07, 2200, 0, "bandpass", 1400, null, 0.8);
+    for (let i = 0; i < 5; i++) noise(0.1, 0.05, 7500, 0.2 + i * 0.18, "highpass");
+  },
+  whoosh() {
+    if (on()) noise(0.35, 0.08, 400, 0, "bandpass", 3000, null, 2);
   },
   overtake(up: boolean) {
     if (on()) up ? (tone(784, 0.07, "triangle", 0.08), tone(1047, 0.1, "triangle", 0.08, 0.06)) : tone(392, 0.12, "triangle", 0.06, 0, 330);
@@ -484,9 +553,20 @@ interface Song {
   lead: string; // 16 steps per bar, digits pick chord tones (+octave), "." rest
   arp: boolean;
   wave: OscillatorType;
+  pad?: boolean; // soft held chord each bar
+  swing?: number; // 0..0.3, delays every second 16th
+  arpWave?: OscillatorType;
 }
 
 const SONGS: Record<string, Song> = {
+  // launcher: a slow, wide synthwave theme
+  title: { bpm: 100, root: 57, chords: [[0, 3, 7, 10], [-4, 0, 3, 7], [-7, -3, 0, 5], [-5, -1, 2, 7]], kick: "x.......x.......", snare: "....x.......x...", hat: "..x...x...x...x.", bass: "0.o.0.o.0.o.0.oo", lead: "3.......2...1...", arp: true, wave: "sawtooth", pad: true, arpWave: "square" },
+  // garage: laid-back lo-fi with swing
+  garage: { bpm: 84, root: 58, chords: [[0, 4, 7, 11], [2, 5, 9, 12], [-1, 2, 5, 9], [-3, 0, 4, 7]], kick: "x.....x...x.....", snare: "....x.......x...", hat: "x.x.x.x.x.x.x.x.", bass: "0.....0...1.....", lead: "....2.......3.1.", arp: false, wave: "triangle", pad: true, swing: 0.22 },
+  // adventure map: bright and bouncy
+  map: { bpm: 118, root: 60, chords: [[0, 4, 7], [-3, 0, 4], [5, 9, 12], [7, 11, 14]], kick: "x...x...x...x...", snare: "....x.......x...", hat: "..x...x...x.x.x.", bass: "0..o0.1.0..o2.1.", lead: "2.3.4...3.2.1...", arp: true, wave: "square", swing: 0.1, arpWave: "triangle" },
+  // results: a victory loop
+  results: { bpm: 126, root: 62, chords: [[0, 4, 7], [5, 9, 12], [7, 11, 14], [0, 4, 7, 12]], kick: "x...x...x...x...", snare: "....x.......x.xx", hat: "xxxxxxxxxxxxxxxx", bass: "0.0o0.0o1.1o2.2o", lead: "4.3.2.3.4...4...", arp: true, wave: "square", pad: true },
   menu: { bpm: 96, root: 60, chords: [[0, 4, 7, 11], [-3, 0, 4, 7], [5, 9, 12, 16], [7, 11, 14, 17]], kick: "x.......x.......", snare: "....x.......x...", hat: "..x...x...x...x.", bass: "0...0.2.0...1.2.", lead: "2...1...0.......", arp: true, wave: "triangle" },
   meadow: { bpm: 142, root: 62, chords: [[0, 4, 7], [5, 9, 12], [-3, 0, 4], [7, 11, 14]], kick: "x...x...x...x...", snare: "....x.......x..x", hat: "x.x.x.x.x.x.x.xx", bass: "0.0o0.0o1.1o2.2o", lead: "2.1.0...2.3.2...", arp: true, wave: "square" },
   kitchen: { bpm: 128, root: 57, chords: [[0, 3, 7, 10], [5, 8, 12, 15], [3, 7, 10, 14], [-2, 2, 5, 9]], kick: "x..x..x...x..x..", snare: "....x.......x...", hat: "x.xxx.xxx.xxx.xx", bass: "0..0o.0.0..1o.2.", lead: "3...2.1...0.1.2.", arp: false, wave: "sawtooth" },
@@ -532,13 +612,15 @@ function schedule() {
       noise(0.16, 0.22, 1800, d, "bandpass", undefined, musicBus);
       tone(190, 0.08, "triangle", 0.12, d, 140, musicBus);
     }
-    if (s.hat[i] === "x") noise(0.035, 0.07, 8000, d, "highpass", undefined, musicBus);
+    const sw = i % 2 === 1 ? (s.swing ?? 0) * six : 0;
+    if (s.hat[i] === "x") noise(0.035, 0.07, 8000, d + sw, "highpass", undefined, musicBus);
     const b = s.bass[i];
     if (b !== ".") {
       const n = b === "o" ? chord[0] + 12 : chord[Number(b) % chord.length];
       tone(midi(n - 24), six * 1.8, "square", 0.11, d, undefined, musicBus);
     }
-    if (s.arp && i % 2 === 1) tone(midi(chord[(i >> 1) % chord.length] + 12), six * 0.9, "triangle", 0.05, d, undefined, musicBus);
+    if (s.pad && i === 0) for (const n of chord.slice(0, 3)) tone(midi(n), six * 15, "sine", 0.035, d, undefined, musicBus);
+    if (s.arp && i % 2 === 1) tone(midi(chord[(i >> 1) % chord.length] + 12), six * 0.9, s.arpWave ?? "triangle", 0.045, d + (s.swing ?? 0) * six, undefined, musicBus);
     const l = s.lead[i];
     if (l !== ".") {
       const k = Number(l);
@@ -563,7 +645,10 @@ function stopMusic() {
   }
 }
 
-export function music(name: "menu" | "meadow" | "kitchen" | "burrow" | "wheel" | "off") {
+export type SongName = "title" | "garage" | "map" | "results" | "menu" | "meadow" | "kitchen" | "burrow" | "wheel" | "off";
+
+// Switch songs with a short dip in volume so screens change smoothly.
+export function music(name: SongName) {
   if (name === "off") {
     song = null;
     stopMusic();
@@ -571,9 +656,20 @@ export function music(name: "menu" | "meadow" | "kitchen" | "burrow" | "wheel" |
   }
   const next = SONGS[name];
   if (song !== next) {
-    song = next;
-    step = 0;
-    fast = false;
+    const swap = () => {
+      song = next;
+      step = 0;
+      fast = false;
+      if (ctx) nextTime = ctx.currentTime + 0.05;
+    };
+    if (ctx && musicBus && song) {
+      const t = ctx.currentTime;
+      musicBus.gain.cancelScheduledValues(t);
+      musicBus.gain.setValueAtTime(musicBus.gain.value, t);
+      musicBus.gain.linearRampToValueAtTime(0.0001, t + 0.25);
+      musicBus.gain.linearRampToValueAtTime(0.42, t + 0.7);
+      window.setTimeout(swap, 260);
+    } else swap();
   }
   if (st.music) startMusic();
 }
