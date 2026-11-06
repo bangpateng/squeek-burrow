@@ -66,10 +66,11 @@ export function Title({ save, wheel, fever, roster, racer, onPlay, onNew, onGara
   return (
     <div className="screen launcher">
       <section className="hero">
-        <img className="heroImg" src="/media/hero.jpg" alt="Six hamster karts lined up on the night start grid" />
+        <img className="heroImg" src="/media/hero.jpg" alt="Genesis Squeek racers, glowing in their on-chain colours, on the night start grid" />
         <div className="heroShade" />
         <header className="lnav">
           <span className="brand">
+            <img className="brandIcon" src="/favicon.svg" alt="" />
             SQUEEK<b>/</b>BURROW
           </span>
           <nav className="lnavLinks">
@@ -151,7 +152,7 @@ export function Title({ save, wheel, fever, roster, racer, onPlay, onNew, onGara
 
         <section className="nftBand">
           <div className="nftArt">
-            <img src="/media/garage.jpg" alt="A Squeek in its kart in the garage" />
+            <img src="/media/garage.jpg" alt="A Genesis Squeek in 3D, sitting in its kart in the garage" />
           </div>
           <div className="nftText">
             <span className="kicker">FOR GENESIS SQUEEK HOLDERS</span>
@@ -188,9 +189,9 @@ export function Title({ save, wheel, fever, roster, racer, onPlay, onNew, onGara
             <h2>MEDIA</h2>
           </div>
           <div className="media">
-            <img src="/media/wheel-side.jpg" alt="Squeek boosting past the giant wheel in the stadium" />
-            <img src="/media/night.jpg" alt="Night race in the Deep Burrow" />
-            <img src="/media/kitchen.jpg" alt="The Kitchen Counter track" />
+            <img src="/media/wheel-side.jpg" alt="A Genesis Squeek racing in the Big Wheel stadium" />
+            <img src="/media/night.jpg" alt="A Genesis Squeek close up during a night race in the Deep Burrow" />
+            <img src="/media/kitchen.jpg" alt="Genesis Squeek racers on the Kitchen Counter track" />
           </div>
         </section>
       </main>

@@ -425,6 +425,8 @@ button.primary:hover:not(:disabled) { background: #FFC866; }
 .lnav { position: relative; z-index: 2; width: 100%; max-width: 1360px; margin: 0 auto; box-sizing: border-box; padding: 20px 40px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap; }
 .brand { font-family: var(--display); font-weight: 800; font-size: 28px; letter-spacing: 0.02em; }
 .brand b { color: var(--seed); }
+.brand { display: inline-flex; align-items: center; gap: 10px; }
+.brandIcon { width: 34px; height: 34px; border-radius: 8px; display: block; }
 .lnavLinks { display: flex; gap: 26px; flex-wrap: wrap; }
 .lnavLinks button { background: none; border: 0; padding: 6px 0; font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: 0.06em; color: #C9C3D2; }
 .lnavLinks button:hover { color: var(--cream); }

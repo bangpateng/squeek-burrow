@@ -339,7 +339,7 @@ export class Race {
     if (high) {
       this.composer = new EffectComposer(this.renderer);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
-      this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), def.theme.night ? 0.75 : 0.42, 0.5, def.theme.night ? 0.62 : 0.86));
+      this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), def.theme.night ? 0.75 : 0.42, 0.5, def.theme.night ? 0.62 : 0.95));
       this.composer.addPass(new OutputPass());
     }
     this.ro = new ResizeObserver(() => this.resize());
